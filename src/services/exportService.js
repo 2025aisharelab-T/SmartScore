@@ -71,7 +71,7 @@ export function exportToTxt(evaluators = [], criteria = []) {
   const { maxEvaluatorId, minEvaluatorId, maxScore, minScore } = findMaxMinEvaluators(evaluators);
 
   let txt = `=================================================================\n`;
-  txt += `            SmartScore 평가위원 수기 평가표 종합 집계 보고서\n`;
+  txt += `      스마트 평가점수 계산기 (SmartScore) 종합 집계 보고서\n`;
   txt += `=================================================================\n`;
   txt += `작성일시: ${dateStr}\n`;
   txt += `총 평가위원 수: ${evaluators.length}명 (검증 완료: ${stats.validCount}명)\n`;

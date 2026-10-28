@@ -20,13 +20,16 @@ export default function Header() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-black tracking-tight text-white">SmartScore</h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                <h1 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-1.5">
+                  <span>스마트 평가점수 계산기</span>
+                  <span className="text-xs font-semibold text-slate-400 hidden sm:inline">(SmartScore)</span>
+                </h1>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500/10 text-blue-400 border border-blue-500/20 whitespace-nowrap">
                   PWA v1.0
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 font-medium hidden sm:block">
-                AI 평가위원 수기 평가표 판독 & 자동 검증 집계 시스템
+                (샘플) AI 평가위원 수기 평가표 판독 & 자동 검증 집계 시스템
               </p>
             </div>
           </div>
