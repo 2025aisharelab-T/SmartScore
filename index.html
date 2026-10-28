@@ -209,19 +209,19 @@
           </div>
         </div>
 
-        <!-- NEW: Real-World 7-Evaluator Dataset & AI Engine Quick Preset -->
+        <!-- Sample Score Table Template Preset (Criteria Only - Never Auto-fills Evaluators) -->
         <div class="p-3.5 bg-gradient-to-r from-purple-950/60 via-indigo-950/40 to-slate-900 border border-purple-500/40 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md mb-3">
           <div class="flex items-center gap-3">
             <div class="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center flex-shrink-0 text-base font-black">
-              🤖
+              📋
             </div>
             <div>
               <div class="flex items-center gap-2">
-                <h4 class="text-xs font-bold text-white">실제 평가표 세트 ((샘플) 그린뉴딜센터) 원클릭 프리셋</h4>
-                <span class="px-1.5 py-0.5 rounded text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">수/우 등급제 완벽 대응</span>
+                <h4 class="text-xs font-bold text-white">샘플 점수표 양식 ((샘플) 그린뉴딜센터 조성사업) 원클릭 등록</h4>
+                <span class="px-1.5 py-0.5 rounded text-[9px] bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold">5개 항목·100점 만점</span>
               </div>
               <p class="text-[11px] text-slate-400 mt-0.5">
-                수/우 등급제 표기, 괄호 혼용, 빈 합계란이 포함된 실제 평가표 세트를 외부 AI 정밀 검증 데이터셋으로 즉시 로드합니다.
+                샘플 점수표의 5개 평가항목과 배점(총 100점)을 Step 1에 자동 등록합니다. (Step 2의 평가위원 및 점수는 깨끗한 미등록 상태로 유지됩니다)
               </p>
             </div>
           </div>
@@ -229,8 +229,8 @@
             <button onclick="openGeminiModal()" class="flex-1 sm:flex-none px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/40 text-xs font-bold transition active:scale-95">
               ⚙️ AI 설정
             </button>
-            <button onclick="loadBucheonSampleFullSet()" class="flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 text-white text-xs font-black shadow-md shadow-purple-600/30 active:scale-95 transition">
-              ⚡ 실제 평가표 세트 로드
+            <button onclick="loadSampleCriteriaPresetOnly()" class="flex-1 sm:flex-none px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 text-white text-xs font-black shadow-md shadow-purple-600/30 active:scale-95 transition">
+              ⚡ 샘플 점수표 등록
             </button>
           </div>
         </div>
@@ -2288,54 +2288,48 @@ JSON 형식 예시:
     }
 
     async function loadBucheonSampleFullSet() {
-      showToast('실제 평가표 데이터셋 로드 중...', '(샘플) 그린뉴딜센터 조성사업 데이터를 주입합니다.');
+      await loadSampleCriteriaPresetOnly();
+    }
 
+    async function loadSampleCriteriaPresetOnly() {
+      showToast('샘플 점수표 양식 등록 중...', '5개 평가항목 및 배점(100점 만점)을 셋팅합니다.');
+
+      // 1. Only apply project environment settings & criteria (NO EVALUATORS AUTO-FILLED!)
       AppState.settings = JSON.parse(JSON.stringify(BUCHEON_PRESET));
-      AppState.evaluators = [];
-      AppState.scores = {};
+      
+      // 2. Evaluators must remain 100% clean and unregistered in Step 2!
+      initDefaultEvaluators(AppState.settings.evaluatorCount || 7);
+      initEmptyScores();
 
-      BUCHEON_7_EVALUATORS.forEach(bEv => {
-        AppState.evaluators.push({
-          id: bEv.id,
-          code: bEv.code,
-          defaultName: bEv.defaultName,
-          realName: bEv.realName,
-          mappedName: bEv.mappedName,
-          affiliation: bEv.affiliation,
-          position: bEv.position,
-          hasImage: true,
-          capturedAt: new Date().toISOString()
-        });
-
-        AppState.scores[bEv.id] = JSON.parse(JSON.stringify(bEv.scores));
-      });
-
-      try {
-        for (const bEv of BUCHEON_7_EVALUATORS) {
-          const { canvas } = generateSyntheticSheetCanvas(bEv.code, bEv.realName);
-          const nameCrop = cropCanvasArea(canvas, 520, 150, 320, 55);
-          await saveImageToDB(bEv.id, canvas.toDataURL('image/jpeg', 0.9), nameCrop.toDataURL('image/png'), {});
-        }
-      } catch (e) {}
+      // 3. Clear any previous images from IndexedDB
+      await clearAllImagesFromDB();
 
       AppState.activeEvaluatorId = 'eval-A';
       AppState.activeVendorId = 'v-1';
 
+      // Clear Step 2 preview canvas & inputs
+      clearStep2CanvasUI();
+
       saveAppState();
 
-      document.getElementById('settingProjectName').value = AppState.settings.projectName;
-      document.getElementById('settingMaxScore').value = AppState.settings.maxScore;
-      document.getElementById('settingDecimalPlaces').value = AppState.settings.decimalPlaces;
-      document.getElementById('headerProjectName').textContent = AppState.settings.projectName;
+      // 4. Update Step 1 UI
+      renderStep1();
 
-      renderCriteriaList();
-      renderVendorList();
-      updateCriteriaSum();
-      renderEvaluatorSlotGrid();
-      renderStep3();
-      renderStep4();
+      // 5. Show template analysis preview box
+      const box = document.getElementById('templateAnalysisBox');
+      if (box) {
+        box.classList.remove('hidden');
+        document.getElementById('templateAnalysisTitle').textContent = '✅ 샘플 점수표 양식 등록 완료';
+        document.getElementById('templateAnalysisCount').textContent = `총 ${AppState.settings.criteria.length}개 항목 (만점: ${AppState.settings.maxScore}점)`;
+        document.getElementById('templateAnalysisDetails').innerHTML = AppState.settings.criteria.map((c, i) => 
+          `<div class="flex items-center justify-between py-1 border-b border-slate-900">
+             <span class="text-slate-200">#${i+1} ${c.name}</span>
+             <span class="font-mono font-bold text-emerald-400">${c.maxScore}점</span>
+           </div>`
+        ).join('');
+      }
 
-      showToast('✅ 실제 평가표 세트 및 AI 검증 완료', '1위 업체 ② (97.50점) / 2위 업체 ① (92.50점) 집계가 산출되었습니다.', 5000);
+      showToast('✅ 샘플 점수표 등록 완료', '평가항목 및 배점이 설정되었습니다. (Step 2 평가위원은 깨끗한 미등록 상태로 유지됩니다)', 4000);
     }
 
     async function runAiInspectionForActiveVendor() {
@@ -4782,17 +4776,22 @@ JSON 응답 구조:
 
     async function executeScoresOnlyReset() {
       closeResetModal();
-      initEmptyScores();
-      AppState.evaluators.forEach(ev => {
-        ev.hasImage = false;
-        ev.realName = '';
-        ev.mappedName = `평가위원 ${ev.code}`;
-        ev.capturedAt = null;
-      });
       await clearAllImagesFromDB();
+      initDefaultEvaluators(AppState.settings.evaluatorCount || 7);
+      initEmptyScores();
+      AppState.currentStep = 1;
+      AppState.activeEvaluatorId = 'eval-A';
+      AppState.activeVendorId = 'v-1';
+
+      // Thoroughly clear Step 2 canvas, inputs, and preview
+      clearStep2CanvasUI();
+
+      const box = document.getElementById('templateAnalysisBox');
+      if (box) box.classList.add('hidden');
+
       saveAppState();
-      showToast('점수 및 이미지 데이터 초기화 완료', '환경 설정은 보존되었습니다. Step 2로 이동합니다.');
-      goToStep(2);
+      showToast('데이터 초기화 완료', '모든 평가표 이미지, 위원 정보, 점수가 깨끗이 삭제되었습니다.');
+      goToStep(1);
     }
 
     async function executeFullReset() {
@@ -4805,14 +4804,36 @@ JSON 응답 구조:
       AppState.currentStep = 1;
       AppState.activeEvaluatorId = 'eval-A';
       AppState.activeVendorId = 'v-1';
+
+      // Thoroughly clear Step 2 canvas, inputs, and preview
+      clearStep2CanvasUI();
+
+      const box = document.getElementById('templateAnalysisBox');
+      if (box) box.classList.add('hidden');
+
       document.getElementById('headerProjectName').textContent = AppState.settings.projectName;
       saveAppState();
-      showToast('전체 완전 초기화 완료', '앱이 최초 설치 상태로 복원되었습니다.');
+      showToast('전체 완전 초기화 완료', '모든 데이터가 완전히 삭제되고 최초 설치 상태로 복원되었습니다.');
       goToStep(1);
     }
 
-    // 16. NAVIGATION INTERCEPTOR & WARNING MODAL (FEATURES 2 & 3)
-    // =======================================================================
+    function clearStep2CanvasUI() {
+      const sheetCanvas = document.getElementById('sheetCanvas');
+      if (sheetCanvas) {
+        const ctx = sheetCanvas.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, sheetCanvas.width, sheetCanvas.height);
+      }
+      const nameCropCanvas = document.getElementById('nameCropCanvas');
+      if (nameCropCanvas) {
+        const nameCtx = nameCropCanvas.getContext('2d');
+        if (nameCtx) nameCtx.clearRect(0, 0, nameCropCanvas.width, nameCropCanvas.height);
+      }
+      const placeholder = document.getElementById('sheetEmptyPlaceholder');
+      if (placeholder) placeholder.classList.remove('hidden');
+      const nameInput = document.getElementById('evaluatorRealNameInput');
+      if (nameInput) nameInput.value = '';
+    }
+
     let warningModalCancelStep = 2;
 
     function requestGoToStep(targetStep) {
