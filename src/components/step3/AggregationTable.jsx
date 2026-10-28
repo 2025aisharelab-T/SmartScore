@@ -61,7 +61,7 @@ export default function AggregationTable() {
           </thead>
           <tbody className="divide-y divide-slate-800/80">
             {evaluators.map((ev, idx) => {
-              const { isValid, calculatedTotal, extractedTotal } = validateEvaluatorScore(ev);
+              const { isValid, hasEmpty, hasZero, statusLabel, calculatedTotal, extractedTotal } = validateEvaluatorScore(ev, criteria);
               const isMax = ev.id === maxEvaluatorId;
               const isMin = ev.id === minEvaluatorId;
 
@@ -91,17 +91,32 @@ export default function AggregationTable() {
 
                   {/* Criteria Item Scores */}
                   {criteria.map((crit) => {
-                    const score = ev.itemScores?.[crit.id] ?? 0;
+                    const raw = ev.itemScores?.[crit.id];
+                    const isEmpty = (raw === '' || raw === null || raw === undefined);
+                    const num = Number(raw);
+                    const isZero = !isEmpty && num === 0;
                     return (
-                      <td key={crit.id} className="py-3.5 px-4 text-center font-mono font-semibold text-slate-300">
-                        {score}
+                      <td key={crit.id} className="py-3.5 px-4 text-center font-mono font-semibold">
+                        {isEmpty ? (
+                          <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/40 text-[10px] font-bold">
+                            빈값(오류)
+                          </span>
+                        ) : isZero ? (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
+                            0점(점검필요)
+                          </span>
+                        ) : (
+                          <span className="text-slate-300">{num}</span>
+                        )}
                       </td>
                     );
                   })}
 
                   {/* OCR Extracted Total */}
                   <td className="py-3.5 px-4 text-center font-mono font-bold text-slate-400">
-                    {extractedTotal}
+                    {extractedTotal === 0 && hasZero ? (
+                      <span className="text-amber-400">0 (점검필요)</span>
+                    ) : extractedTotal}
                   </td>
 
                   {/* Calculated Total Cell (With MAX/MIN Highlighting) */}
@@ -123,18 +138,29 @@ export default function AggregationTable() {
                   <td className="py-3.5 px-4 text-center">
                     {isValid ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        <CheckCircle2 className="w-3 h-3" /> 정상
+                        <CheckCircle2 className="w-3 h-3" /> 검수완료
                       </span>
+                    ) : hasEmpty ? (
+                      <button
+                        onClick={() => {
+                          setActiveEvaluatorId(ev.id);
+                          setCurrentStep(2);
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 hover:bg-rose-500/30 transition cursor-pointer"
+                        title="클릭 시 수정"
+                      >
+                        <AlertCircle className="w-3 h-3 animate-pulse" /> 오류 (빈값)
+                      </button>
                     ) : (
                       <button
                         onClick={() => {
                           setActiveEvaluatorId(ev.id);
                           setCurrentStep(2);
                         }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30 hover:bg-rose-500/20 transition cursor-pointer"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 transition cursor-pointer"
                         title="클릭 시 수정"
                       >
-                        <AlertCircle className="w-3 h-3 animate-pulse" /> 수정 필요
+                        <AlertCircle className="w-3 h-3 animate-pulse" /> {statusLabel || '점검필요'}
                       </button>
                     )}
                   </td>

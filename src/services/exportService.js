@@ -31,15 +31,21 @@ export function exportToCsv(evaluators = [], criteria = []) {
   const headers = ['연번', '평가위원명', ...criteria.map(c => `${c.name}(${c.maxScore}점)`), 'OCR 표기 총점', '검증 합계 총점', '검증 상태', '비고'];
   
   const rows = evaluators.map((ev, index) => {
-    const val = validateEvaluatorScore(ev);
-    const itemScores = criteria.map(c => ev.itemScores?.[c.id] ?? 0);
-    const statusText = val.isValid ? '일치(정상)' : `불일치(오차 ${val.difference > 0 ? '+' : ''}${val.difference}점)`;
+    const val = validateEvaluatorScore(ev, criteria);
+    const itemScores = criteria.map(c => {
+      const raw = ev.itemScores?.[c.id];
+      if (raw === '' || raw === null || raw === undefined) return '"빈값(오류)"';
+      const num = Number(raw);
+      if (num === 0) return '"0(점검필요)"';
+      return num;
+    });
+    const statusText = val.isValid ? '검수완료(정상)' : val.statusLabel;
     
     return [
       index + 1,
       `"${ev.name.replace(/"/g, '""')}"`,
       ...itemScores,
-      ev.extractedTotalScore,
+      ev.extractedTotalScore === 0 ? '"0(점검필요)"' : (ev.extractedTotalScore || '"빈값(오류)"'),
       val.calculatedTotal,
       `"${statusText}"`,
       `"${(ev.notes || '').replace(/"/g, '""')}"`
@@ -87,18 +93,20 @@ export function exportToTxt(evaluators = [], criteria = []) {
   txt += `[평가위원별 세부 점수 및 검증 결과]\n`;
 
   evaluators.forEach((ev, idx) => {
-    const val = validateEvaluatorScore(ev);
+    const val = validateEvaluatorScore(ev, criteria);
     const isMax = ev.id === maxEvaluatorId;
     const isMin = ev.id === minEvaluatorId;
     const tag = isMax ? ' ★[최고점]' : isMin ? ' ▲[최저점]' : '';
 
     txt += `\n#${idx + 1} ${ev.name}${tag}\n`;
     criteria.forEach(c => {
-      txt += `  - ${c.name}: ${ev.itemScores?.[c.id] ?? 0}점 / ${c.maxScore}점\n`;
+      const raw = ev.itemScores?.[c.id];
+      const valStr = (raw === '' || raw === null || raw === undefined) ? '빈값(오류)' : (Number(raw) === 0 ? '0점(점검필요)' : `${raw}점`);
+      txt += `  - ${c.name}: ${valStr} / ${c.maxScore}점\n`;
     });
-    txt += `  - OCR 표기 총점: ${ev.extractedTotalScore}점\n`;
+    txt += `  - OCR 표기 총점: ${ev.extractedTotalScore === 0 ? '0점(점검필요)' : (ev.extractedTotalScore || '빈값(오류)')}점\n`;
     txt += `  - 계산 합계 총점: ${val.calculatedTotal}점\n`;
-    txt += `  - 검증 상태: ${val.isValid ? '정상 (일치)' : '⚠️ 불일치 경고 (확인 필요)'}\n`;
+    txt += `  - 검증 상태: ${val.isValid ? '검수완료 (정상)' : `⚠️ ${val.statusLabel}`}\n`;
     if (ev.notes) txt += `  - 비고: ${ev.notes}\n`;
   });
 

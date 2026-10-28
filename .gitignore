@@ -1,4 +1,6 @@
-# Logs
+# Scratch / Temporary
+scratch/
+
 logs
 *.log
 npm-debug.log*

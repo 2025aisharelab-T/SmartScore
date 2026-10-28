@@ -8,24 +8,100 @@
  * @returns {number}
  */
 export function calculateItemTotal(itemScores = {}) {
-  return Object.values(itemScores).reduce((sum, score) => sum + (Number(score) || 0), 0);
+  return Object.values(itemScores).reduce((sum, score) => {
+    if (score === '' || score === null || score === undefined) return sum;
+    const num = Number(score);
+    return isNaN(num) ? sum : sum + num;
+  }, 0);
 }
 
 /**
- * Validates whether an evaluator's item sum matches the OCR-extracted total score
+ * Validates whether an evaluator's item sum matches the OCR-extracted total score,
+ * and checks for zero scores and empty fields.
  * @param {Object} evaluator 
- * @returns {Object} { isValid, calculatedTotal, extractedTotal, difference }
+ * @param {Array<Object>} [criteria]
+ * @returns {Object} { isValid, hasEmpty, hasZero, statusLabel, calculatedTotal, extractedTotal, difference }
  */
-export function validateEvaluatorScore(evaluator) {
-  if (!evaluator) return { isValid: true, calculatedTotal: 0, extractedTotal: 0, difference: 0 };
-  
+export function validateEvaluatorScore(evaluator, criteria = []) {
+  if (!evaluator) {
+    return {
+      isValid: false,
+      hasEmpty: true,
+      hasZero: false,
+      statusLabel: '오류 (빈값)',
+      calculatedTotal: 0,
+      extractedTotal: 0,
+      difference: 0
+    };
+  }
+
+  const itemScores = evaluator.itemScores || {};
+  let hasEmpty = false;
+  let hasZero = false;
+
+  if (criteria && criteria.length > 0) {
+    criteria.forEach(c => {
+      const val = itemScores[c.id];
+      if (val === '' || val === null || val === undefined) {
+        hasEmpty = true;
+      } else {
+        const num = Number(val);
+        if (isNaN(num)) {
+          hasEmpty = true;
+        } else if (num === 0) {
+          hasZero = true;
+        }
+      }
+    });
+  } else {
+    const vals = Object.values(itemScores);
+    if (vals.length === 0) {
+      hasEmpty = true;
+    } else {
+      vals.forEach(v => {
+        if (v === '' || v === null || v === undefined) {
+          hasEmpty = true;
+        } else {
+          const num = Number(v);
+          if (isNaN(num)) {
+            hasEmpty = true;
+          } else if (num === 0) {
+            hasZero = true;
+          }
+        }
+      });
+    }
+  }
+
+  const rawExtracted = evaluator.extractedTotalScore;
+  const isExtractedEmpty = (rawExtracted === '' || rawExtracted === null || rawExtracted === undefined || isNaN(Number(rawExtracted)));
+  if (isExtractedEmpty) {
+    hasEmpty = true;
+  }
+  const extractedTotal = isExtractedEmpty ? 0 : Number(rawExtracted);
+  if (!isExtractedEmpty && extractedTotal === 0) {
+    hasZero = true;
+  }
+
   const calculatedTotal = calculateItemTotal(evaluator.itemScores);
-  const extractedTotal = Number(evaluator.extractedTotalScore) || 0;
-  const isValid = calculatedTotal === extractedTotal;
+  const isMismatch = (calculatedTotal !== extractedTotal);
+  const isValid = !hasEmpty && !hasZero && !isMismatch;
   const difference = calculatedTotal - extractedTotal;
+
+  let statusLabel = '검수완료';
+  if (hasEmpty) {
+    statusLabel = '오류 (빈값)';
+  } else if (hasZero) {
+    statusLabel = '점검필요 (0점)';
+  } else if (isMismatch) {
+    statusLabel = '점검필요 (불일치)';
+  }
 
   return {
     isValid,
+    hasEmpty,
+    hasZero,
+    statusLabel,
     calculatedTotal,
     extractedTotal,
     difference
