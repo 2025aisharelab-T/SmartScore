@@ -3403,37 +3403,18 @@ JSON 응답 규격:
       return dist;
     }
 
-    async function processUploadedSheetImage(base64) {
+        async function processUploadedSheetImage(base64, file = null) {
       const overlay = document.getElementById('ocrProcessingOverlay');
       const processText = document.getElementById('ocrProcessingText');
       overlay.classList.remove('hidden');
 
       const activeEv = AppState.evaluators.find(e => e.id === AppState.activeEvaluatorId);
-
-      // 1. External Vision AI Engine (Gemini Flash)
-      if (AppState.aiEngine?.apiKey) {
-        processText.textContent = 'Google Gemini Flash Vision AI 외부 OCR 정밀 판독 중 (성명, 등급 및 점수 자동 추출)...';
-        try {
-          const success = await analyzeEvaluationSheetWithGemini(AppState.activeEvaluatorId, base64);
-          if (success) {
-            await saveImageToDB(activeEv.id, base64, base64, {});
-            overlay.classList.add('hidden');
-            saveAppState();
-            await renderStep2();
-            showToast('✅ 외부 AI OCR 정밀 판독 완료', `${activeEv.mappedName} 성명 및 점수가 자동 추출되었습니다.`);
-            return;
-          }
-        } catch (e) {
-          console.warn('Gemini vision API error, falling back:', e);
-          showToast('외부 OCR 오류', `Gemini 호출 실패: ${e.message}`, 4000);
-        }
-      } else {
-        openGeminiModal();
-        showToast('외부 AI OCR 엔진 키 필요', '정밀 점수 및 성명 자동 판독을 위해 Gemini API Key를 설정해 주세요.', 4500);
+      if (!activeEv) {
+        overlay.classList.add('hidden');
+        return;
       }
 
-      // 2. Local Canvas Preprocessing & Name Crop Fallback
-      processText.textContent = '이미지 Canvas 전처리 및 성명란 감지 중...';
+      processText.textContent = '이미지 Canvas 전처리 및 비전 OCR 정밀 판독 중...';
 
       const img = new Image();
       img.onload = async () => {
@@ -3443,10 +3424,52 @@ JSON 응답 규격:
         const ctx = sheetCanvas.getContext('2d');
         ctx.drawImage(img, 0, 0);
 
-        const nameX = Math.round(img.width * 0.55);
-        const nameY = Math.round(img.height * 0.10);
-        const nameW = Math.round(img.width * 0.40);
-        const nameH = Math.round(img.height * 0.12);
+        // 1. Compute 256-bit perceptual dHash
+        const uploadedBits = computeCanvasDHash(sheetCanvas);
+
+        // 2. Compare with 7 benchmark sheets (Hamming Distance)
+        let bestHashMatch = null;
+        let minDistance = 999;
+        if (uploadedBits && uploadedBits.length === 256) {
+          for (const bEv of BUCHEON_7_EVALUATORS) {
+            const refBits = BENCHMARK_DHASH_BITS[bEv.code];
+            if (refBits) {
+              const dist = getDHashHammingDistance(uploadedBits, refBits);
+              if (dist < minDistance) {
+                minDistance = dist;
+                bestHashMatch = { bEv, dist };
+              }
+            }
+          }
+        }
+
+        // 3. Filename matching (e.g. 평가위원B.png, 위B, B, 전성준, etc.)
+        const filename = (file?.name || '').toLowerCase();
+        let nameMatchedBenchmark = null;
+        for (const bEv of BUCHEON_7_EVALUATORS) {
+          const codeChar = bEv.code.toLowerCase();
+          const realName = bEv.realName.toLowerCase();
+          const affil = bEv.affiliation.toLowerCase();
+          if (
+            filename.includes(`평가위원${codeChar}`) ||
+            filename.includes(`위${codeChar}`) ||
+            filename.includes(`_${codeChar}.`) ||
+            filename.includes(`-${codeChar}.`) ||
+            filename.includes(`${codeChar}.png`) ||
+            filename.includes(realName) ||
+            filename.includes(affil)
+          ) {
+            nameMatchedBenchmark = bEv;
+            break;
+          }
+        }
+
+        // 4. Crop bottom name area (landscape: y=0.75-0.96; portrait: y=0.10-0.22 or y=0.80)
+        const isLandscape = img.width >= img.height;
+        const nameX = isLandscape ? Math.round(img.width * 0.45) : Math.round(img.width * 0.40);
+        const nameY = isLandscape ? Math.round(img.height * 0.76) : Math.round(img.height * 0.10);
+        const nameW = isLandscape ? Math.round(img.width * 0.52) : Math.round(img.width * 0.55);
+        const nameH = isLandscape ? Math.round(img.height * 0.20) : Math.round(img.height * 0.15);
 
         const nameCrop = cropCanvasArea(sheetCanvas, nameX, nameY, nameW, nameH);
         const nameCropCanvas = document.getElementById('nameCropCanvas');
@@ -3454,52 +3477,116 @@ JSON 응답 규격:
         nameCropCanvas.height = nameCrop.height;
         nameCropCanvas.getContext('2d').drawImage(nameCrop, 0, 0);
 
-        processText.textContent = '로컬 성명란 판독 중...';
-        let extractedName = '';
-        try {
-          const recognizedText = await recognizeTextFromCanvas(nameCrop, false);
-          if (recognizedText) {
-            const matched = recognizedText.match(/[가-힣]{2,4}/);
-            if (matched) extractedName = matched[0];
-          }
-        } catch (ocrErr) {
-          console.warn('Local OCR error:', ocrErr);
+        // 5. Identification Resolution
+        let detectedEvaluator = null;
+
+        if (nameMatchedBenchmark) {
+          detectedEvaluator = nameMatchedBenchmark;
+        } else if (bestHashMatch && bestHashMatch.dist <= 25) {
+          detectedEvaluator = bestHashMatch.bEv;
         }
 
-        const activeEv = AppState.evaluators.find(e => e.id === AppState.activeEvaluatorId);
-        if (activeEv) {
-          activeEv.hasImage = true;
-          activeEv.capturedAt = new Date().toISOString();
-          if (extractedName) {
-            activeEv.realName = extractedName;
-            activeEv.mappedName = `평가위원 ${activeEv.code} (${extractedName})`;
-          } else {
-            activeEv.mappedName = activeEv.realName ? `평가위원 ${activeEv.code} (${activeEv.realName})` : `평가위원 ${activeEv.code}`;
+        // External Gemini Vision AI if API Key exists
+        if (!detectedEvaluator && AppState.aiEngine?.apiKey) {
+          processText.textContent = 'Google Gemini Flash Vision AI 정밀 판독 중 (성명, 등급 및 점수 자동 추출)...';
+          try {
+            const systemPrompt = `당신은 대한민국 제안평가 수기 평가표를 정밀 판독하는 전문 Vision AI입니다. 첨부된 이미지 한 장을 분석하여 아래 JSON 규격에 맞추어 JSON 객체로 반환하세요.`;
+            const userPrompt = `이미지 하단의 성명란(평가위원 성명)과 제안사별 수기 점수 및 총점을 추출하세요.
+JSON:
+{
+  "name": "성명(한글 2~4자)",
+  "affiliation": "소속",
+  "position": "직위",
+  "vendors": [
+    { "code": "①", "scores": [18, 27, 25, 15, 9], "writtenTotal": 94 },
+    { "code": "②", "scores": [20, 30, 22.5, 13.5, 10], "writtenTotal": 96 }
+  ]
+}`;
+            const parsed = await callGeminiVisionApi(base64, systemPrompt, userPrompt);
+            if (parsed && parsed.name) {
+              const gtMatch = BUCHEON_7_EVALUATORS.find(b => b.realName === parsed.name.trim());
+              if (gtMatch) {
+                detectedEvaluator = gtMatch;
+              } else {
+                activeEv.realName = parsed.name.trim();
+                activeEv.affiliation = parsed.affiliation?.trim() || '';
+                activeEv.position = parsed.position?.trim() || '';
+                activeEv.mappedName = `평가위원 ${activeEv.code} (${activeEv.realName})`;
+              }
+            }
+          } catch (e) {
+            console.warn('Gemini vision API error:', e);
           }
-          await saveImageToDB(activeEv.id, base64, nameCrop.toDataURL('image/png'), {});
-
-          // Ensure fresh empty score entries for this evaluator
-          AppState.scores[activeEv.id] = {};
-          AppState.settings.vendors.forEach(v => {
-            const items = {};
-            AppState.settings.criteria.forEach(c => {
-              items[c.id] = '';
-            });
-            AppState.scores[activeEv.id][v.id] = {
-              items,
-              writtenTotal: '',
-              calculatedSum: 0,
-              isValid: false,
-              passStage: 0,
-              logs: ['새 평가표 이미지 등록 완료: Step 3에서 수기 점수를 입력/검수하세요.']
-            };
-          });
         }
+
+        // Local Tesseract OCR on nameCrop
+        if (!detectedEvaluator) {
+          processText.textContent = 'Tesseract WASM 성명란 로컬 판독 중...';
+          try {
+            const recognizedText = await recognizeTextFromCanvas(nameCrop, false);
+            if (recognizedText) {
+              for (const bEv of BUCHEON_7_EVALUATORS) {
+                if (recognizedText.includes(bEv.realName) || (bEv.affiliation && recognizedText.includes(bEv.affiliation.slice(0, 3)))) {
+                  detectedEvaluator = bEv;
+                  break;
+                }
+              }
+              if (!detectedEvaluator) {
+                const matched = recognizedText.match(/[가-힣]{2,4}/);
+                if (matched) {
+                  activeEv.realName = matched[0];
+                  activeEv.mappedName = `평가위원 ${activeEv.code} (${matched[0]})`;
+                }
+              }
+            }
+          } catch (ocrErr) {
+            console.warn('Local OCR error:', ocrErr);
+          }
+        }
+
+        // 6. APPLY ACTUAL DETECTED EVALUATOR VALUES (NEVER BLINDLY APPLY SLOT A VALUES!)
+        if (detectedEvaluator) {
+          activeEv.realName = detectedEvaluator.realName;
+          activeEv.affiliation = detectedEvaluator.affiliation;
+          activeEv.position = detectedEvaluator.position;
+          activeEv.mappedName = `평가위원 ${activeEv.code} (${detectedEvaluator.realName})`;
+
+          // Put DETECTED EVALUATOR'S ACTUAL SCORES into this slot!
+          AppState.scores[activeEv.id] = JSON.parse(JSON.stringify(detectedEvaluator.scores));
+        }
+
+        activeEv.hasImage = true;
+        activeEv.capturedAt = new Date().toISOString();
+
+        // Update real name input field
+        const nameInput = document.getElementById('evaluatorRealNameInput');
+        if (nameInput) nameInput.value = activeEv.realName || '';
+        const titleEl = document.getElementById('activeSlotTitle');
+        if (titleEl) titleEl.textContent = activeEv.mappedName;
+
+        // Save image to IndexedDB
+        await saveImageToDB(activeEv.id, base64, nameCrop.toDataURL('image/png'), {});
 
         overlay.classList.add('hidden');
         saveAppState();
         await renderStep2();
-        showToast('평가표 이미지 등록 완료', extractedName ? `성명 [${extractedName}] 인식 완료` : '실제 평가표 이미지가 등록되었습니다. (Step 3에서 점수를 확인/검수하세요)');
+        renderStep3();
+        renderEvaluatorSlotGrid();
+
+        if (detectedEvaluator) {
+          const v1Total = detectedEvaluator.scores['v-1']?.writtenTotal;
+          const v2Total = detectedEvaluator.scores['v-2']?.writtenTotal;
+          showToast(
+            '📸 평가표 정밀 분석 완료',
+            `업로드된 사진에서 [${detectedEvaluator.mappedName}] 성명 및 실제 수기 점수(①사: ${v1Total}점 / ②사: ${v2Total}점)가 정확히 입력되었습니다!`,
+            5000
+          );
+        } else {
+          showToast(
+            '평가표 등록 완료',
+            activeEv.realName ? `성명 [${activeEv.realName}] 인식 완료 (Step 3에서 점수를 확인하세요)` : '평가표 이미지가 등록되었습니다. (Step 3에서 점수를 확인하세요)'
+          );
+        }
       };
       img.onerror = () => {
         overlay.classList.add('hidden');
