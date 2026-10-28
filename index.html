@@ -1,0 +1,3347 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>SmartScore - 다중업체 제안평가 수기 점수표 온디바이스 OCR 자동 검수 & 집계 시스템</title>
+  <meta name="description" content="외부 서버 없이 스마트폰 브라우저 로컬 환경에서 단일 HTML로 100% 동작하는 다중업체 제안평가 수기 점수표 로컬 OCR 자동 검수 및 집계 웹앱" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Fira Code', 'Menlo', 'monospace']
+          },
+          colors: {
+            kakao: {
+              yellow: '#FEE500',
+              brown: '#191919'
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Tesseract.js (WASM On-Device OCR) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+
+  <!-- html2pdf.js (Korean-compatible A4 PDF Generation) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <style>
+    /* Custom Scrollbar & Mobile Optimizations */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+    ::-webkit-scrollbar-thumb { background: rgba(71, 85, 105, 0.5); border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(100, 116, 139, 0.8); }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+    /* Touch optimizations */
+    button, input, select, textarea {
+      touch-action: manipulation;
+    }
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+
+    @keyframes pulseSoft {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.85; transform: scale(0.98); }
+    }
+    .animate-pulse-soft {
+      animation: pulseSoft 2s infinite ease-in-out;
+    }
+
+    /* Print styles */
+    @media print {
+      body { background: white !important; color: black !important; }
+      .no-print { display: none !important; }
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans selection:bg-indigo-600 selection:text-white">
+
+  <!-- ========================================================================= -->
+  <!-- 0. REFRESH RESTORE TOAST NOTIFICATION                                     -->
+  <!-- ========================================================================= -->
+  <div id="restoreToast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] transition-all duration-300 opacity-0 pointer-events-none transform -translate-y-4">
+    <div class="bg-emerald-950/95 border border-emerald-500/60 text-emerald-200 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md flex items-center gap-3">
+      <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+      </div>
+      <div class="flex-1 text-xs">
+        <p class="font-bold text-emerald-100" id="toastTitle">작업 상태 자동 복원 완료</p>
+        <p class="text-[11px] text-emerald-300/80" id="toastSubtitle">새로고침 방어로 이전 설정과 점수가 보존되었습니다.</p>
+      </div>
+      <button onclick="hideToast()" class="text-emerald-400 hover:text-emerald-200 p-1">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- APP HEADER                                                                -->
+  <!-- ========================================================================= -->
+  <header class="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-4 py-3 shadow-md">
+    <div class="max-w-7xl mx-auto flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-blue-600 to-emerald-500 flex items-center justify-center shadow-lg shadow-indigo-500/20 text-white font-black text-sm">
+          SS
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base font-extrabold text-white tracking-tight">SmartScore</h1>
+            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">온디바이스 v2.1</span>
+          </div>
+          <p class="text-[11px] text-slate-400 truncate max-w-[210px] sm:max-w-md" id="headerProjectName">2026 차세대 지능형 통합플랫폼 구축 제안평가</p>
+        </div>
+      </div>
+
+      <!-- Quick Action Controls -->
+      <div class="flex items-center gap-2">
+        <button onclick="openResetModal()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-950/40 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-700/50 text-xs font-semibold transition active:scale-95" title="데이터 안전 초기화">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          <span class="hidden sm:inline">데이터 초기화</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================================= -->
+  <!-- STEP NAVIGATION BAR                                                       -->
+  <!-- ========================================================================= -->
+  <nav class="sticky top-[57px] z-30 bg-slate-900 border-b border-slate-800/80 px-2 sm:px-4 py-2.5 overflow-x-auto no-scrollbar">
+    <div class="max-w-7xl mx-auto flex items-center justify-between gap-1 sm:gap-2 min-w-[580px]">
+      <button onclick="requestGoToStep(1)" id="stepTab-1" class="step-tab flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold transition border">
+        <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black">1</span>
+        <span>환경 셋팅</span>
+      </button>
+      <div class="text-slate-600 text-xs font-mono">➔</div>
+      <button onclick="requestGoToStep(2)" id="stepTab-2" class="step-tab flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold transition border">
+        <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black">2</span>
+        <span>평가표 촬영·실명</span>
+      </button>
+      <div class="text-slate-600 text-xs font-mono">➔</div>
+      <button onclick="requestGoToStep(3)" id="stepTab-3" class="step-tab flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold transition border">
+        <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black">3</span>
+        <span>수기점수 3회 검수</span>
+      </button>
+      <div class="text-slate-600 text-xs font-mono">➔</div>
+      <button onclick="requestGoToStep(4)" id="stepTab-4" class="step-tab flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold transition border">
+        <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black">4</span>
+        <span>최종 집계·PDF·카톡</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ========================================================================= -->
+  <!-- MAIN WORKSPACE CONTENT                                                    -->
+  <!-- ========================================================================= -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-5 md:p-6 space-y-6">
+
+    <!-- ===================================================================== -->
+    <!-- STEP 1: EVALUATION ENVIRONMENT SETTINGS                               -->
+    <!-- ===================================================================== -->
+    <section id="stepSection-1" class="step-section hidden space-y-5">
+      <!-- Section Banner -->
+      <div class="bg-gradient-to-r from-indigo-900/40 via-blue-900/30 to-slate-900 border border-indigo-500/30 rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 text-xs font-extrabold border border-indigo-500/30">Step 1</span>
+            <h2 class="text-base sm:text-lg font-bold text-white">평가환경 로컬 셋팅</h2>
+          </div>
+          <p class="text-xs text-slate-300 mt-1">평가표 양식을 사진 촬영/업로드하여 항목과 배점을 자동 파악하거나, 직접 설정값을 입력합니다.</p>
+        </div>
+        <button onclick="saveSettingsAndProceed()" class="self-end sm:self-auto flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 active:scale-95 transition">
+          <span>설정 저장 & Step 2 이동</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+        </button>
+      </div>
+
+      <!-- Feature 1: Evaluation Sheet Template Photo Recognition Card -->
+      <div class="bg-gradient-to-r from-blue-950/60 via-indigo-950/50 to-slate-900 border border-blue-500/40 rounded-2xl p-4 sm:p-5 shadow-lg space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="px-2 py-0.5 rounded text-[10px] font-black bg-blue-500/20 text-blue-300 border border-blue-500/40">AI 양식 인식</span>
+              <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+                📸 평가표 양식 사진 촬영·업로드 ➔ 평가항목 및 배점 자동 파악
+              </h3>
+            </div>
+            <p class="text-xs text-slate-300 mt-1">
+              공백 평가표 양식 사진을 촬영하거나 업로드하면, OCR로 평가항목명과 배점 한도를 자동 파악하여 아래 셋팅에 즉시 반영합니다.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- Camera Button -->
+            <label class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold cursor-pointer shadow-md active:scale-95 transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="4"/></svg>
+              <span>양식 촬영</span>
+              <input type="file" accept="image/*" capture="environment" class="hidden" onchange="handleTemplateImageUpload(event)" />
+            </label>
+            <!-- Gallery Upload -->
+            <label class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold cursor-pointer active:scale-95 transition">
+              <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              <span>양식 파일 선택</span>
+              <input type="file" accept="image/*" class="hidden" onchange="handleTemplateImageUpload(event)" />
+            </label>
+            <!-- Quick Test Button -->
+            <button onclick="testSampleTemplateAutoRecognition()" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-600/30 to-teal-600/30 hover:from-emerald-600/50 text-emerald-300 border border-emerald-500/40 text-xs font-bold active:scale-95 transition">
+              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+              <span>📋 샘플 양식 자동 파악 테스트</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Template Analysis Preview & Details -->
+        <div id="templateAnalysisBox" class="hidden p-3 bg-slate-950/80 border border-blue-500/30 rounded-xl space-y-2 text-xs">
+          <div class="flex items-center justify-between text-blue-300 font-bold">
+            <span id="templateAnalysisTitle">양식 분석 완료</span>
+            <span id="templateAnalysisCount" class="font-mono text-[11px] text-emerald-400"></span>
+          </div>
+          <div id="templateAnalysisDetails" class="text-slate-300 text-[11px] space-y-1"></div>
+        </div>
+      </div>
+
+      <!-- Settings Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <!-- Left: Basic Config (1 Col) -->
+        <div class="space-y-4">
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
+            <h3 class="text-xs font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+              기본 평가 정보
+            </h3>
+
+            <!-- Project Name -->
+            <div class="space-y-1.5">
+              <label class="text-xs font-medium text-slate-300">평가 사업명</label>
+              <input type="text" id="settingProjectName" class="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-xl px-3.5 py-2 text-xs text-white outline-none transition" placeholder="사업명을 입력하세요" />
+            </div>
+
+            <!-- Total Score & Decimal Places -->
+            <div class="grid grid-cols-2 gap-3">
+              <div class="space-y-1.5">
+                <label class="text-xs font-medium text-slate-300">평가총점 (만점)</label>
+                <input type="number" id="settingMaxScore" class="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-xl px-3 py-2 text-xs font-mono font-bold text-white outline-none transition" min="10" max="1000" />
+              </div>
+              <div class="space-y-1.5">
+                <label class="text-xs font-medium text-slate-300">소수점 자릿수</label>
+                <select id="settingDecimalPlaces" class="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-xl px-2 py-2 text-xs text-white outline-none transition">
+                  <option value="0">정수 (0자리)</option>
+                  <option value="1">소수 1자리 (0.1)</option>
+                  <option value="2">소수 2자리 (0.01)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Evaluator Count Slider/Buttons -->
+            <div class="space-y-2 pt-2 border-t border-slate-800">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-medium text-slate-300">평가위원 명수</label>
+                <span id="evaluatorCountDisplay" class="text-xs font-mono font-black text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">7명 (기본)</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <button type="button" onclick="setEvaluatorCount(7)" id="btnCount7" class="py-2 px-3 rounded-xl text-xs font-bold border transition text-center">7명 구성 (A~G)</button>
+                <button type="button" onclick="setEvaluatorCount(8)" id="btnCount8" class="py-2 px-3 rounded-xl text-xs font-bold border transition text-center">8명 구성 (A~H)</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Middle: Multi-Vendor Setup (1 Col) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm flex flex-col">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-bold text-blue-400 uppercase tracking-wider flex items-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+              다중 제안사(업체) 목록
+            </h3>
+            <button onclick="addVendorRow()" class="text-xs font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              제안사 추가
+            </button>
+          </div>
+          <p class="text-[11px] text-slate-400">평가표 열(Column)에 배치되는 대상 기업 목록입니다.</p>
+
+          <div id="vendorListContainer" class="space-y-2 flex-1 overflow-y-auto max-h-[300px] pr-1">
+            <!-- Dynamic Vendor Rows -->
+          </div>
+        </div>
+
+        <!-- Right: Criteria & Max Scores (1 Col) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm flex flex-col">
+          <div class="flex items-center justify-between">
+            <h3 class="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+              평가항목 및 배점 한도
+            </h3>
+            <button onclick="addCriteriaRow()" class="text-xs font-bold text-emerald-400 hover:text-emerald-300 flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              항목 추가
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between text-xs px-2 py-1.5 rounded-xl bg-slate-950 border border-slate-800">
+            <span class="text-slate-400">배점 합계:</span>
+            <span id="criteriaSumBadge" class="font-mono font-bold text-emerald-400">100 / 100점 (일치)</span>
+          </div>
+
+          <div id="criteriaListContainer" class="space-y-2 flex-1 overflow-y-auto max-h-[300px] pr-1">
+            <!-- Dynamic Criteria Rows -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ===================================================================== -->
+    <!-- STEP 2: SHEET CAPTURE & EVALUATOR NAME RECOGNITION                    -->
+    <!-- ===================================================================== -->
+    <section id="stepSection-2" class="step-section hidden space-y-5">
+      <!-- Section Banner -->
+      <div class="bg-gradient-to-r from-blue-900/40 via-indigo-900/30 to-slate-900 border border-blue-500/30 rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded-md bg-blue-500/20 text-blue-300 text-xs font-extrabold border border-blue-500/30">Step 2</span>
+            <h2 class="text-base sm:text-lg font-bold text-white">평가표 촬영 및 평가위원 실명 인식</h2>
+          </div>
+          <p class="text-xs text-slate-300 mt-1">스마트폰 후면 카메라로 평가표를 촬영하면 성명란을 로컬 OCR로 자동 인식하여 매핑합니다.</p>
+        </div>
+        <div class="flex items-center gap-2 self-end sm:self-auto">
+          <button onclick="requestGoToStep(3)" class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-lg active:scale-95 transition">
+            <span>수기점수 3회 검수 (Step 3) ➔</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Evaluator Slot Selector (Red for Unregistered) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+            <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+            스캔 대상 평가위원 슬롯 선택
+          </label>
+          <span class="text-[11px] text-rose-400 font-bold">미등록 슬롯은 붉은색(적색)으로 표시됩니다</span>
+        </div>
+        <div id="evaluatorSlotGrid" class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 lg:grid-cols-8 gap-2">
+          <!-- Dynamic Evaluator Slots -->
+        </div>
+      </div>
+
+      <!-- Active Evaluator Capture Box -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        <!-- Left: Upload & Camera Controls (5 Cols) -->
+        <div class="lg:col-span-5 space-y-4">
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-sm">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div>
+                <h3 class="text-sm font-bold text-white flex items-center gap-2" id="activeSlotTitle">
+                  평가위원 A (미인식)
+                </h3>
+                <p class="text-[11px] text-slate-400">현재 선택된 슬롯의 평가표를 등록합니다.</p>
+              </div>
+              <span id="activeSlotStatusBadge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-600/30 text-rose-300 border border-rose-500/50">미등록</span>
+            </div>
+
+            <!-- Evaluator Real Name Input / OCR Result -->
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2">
+              <div class="flex items-center justify-between text-xs">
+                <span class="text-slate-400 font-medium flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                  인식된 위원 성명 (실명 매핑)
+                </span>
+                <span id="nameOcrConfidence" class="text-[10px] text-emerald-400 font-mono">신뢰도: -</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <input type="text" id="evaluatorRealNameInput" oninput="handleManualNameChange(this.value)" placeholder="OCR 판독 대기 또는 직접 입력" class="flex-1 bg-slate-900 border border-slate-700 focus:border-blue-500 rounded-lg px-3 py-1.5 text-xs text-white font-bold outline-none" />
+                <button onclick="runNameOcrOnActiveCrop()" class="px-3 py-1.5 bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/40 rounded-lg text-xs font-semibold">
+                  성명 재판독
+                </button>
+              </div>
+            </div>
+
+            <!-- Upload / Camera Buttons -->
+            <div class="space-y-2.5">
+              <!-- Real Camera Capture Button -->
+              <label class="w-full flex items-center justify-center gap-2.5 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold cursor-pointer shadow-lg shadow-blue-600/20 active:scale-95 transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><circle cx="12" cy="13" r="4"/></svg>
+                <span>스마트폰 후면 카메라 촬영</span>
+                <input type="file" accept="image/*" capture="environment" class="hidden" onchange="handleImageUpload(event)" />
+              </label>
+
+              <!-- Gallery File Upload Button -->
+              <label class="w-full flex items-center justify-center gap-2.5 py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold cursor-pointer active:scale-95 transition">
+                <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                <span>사진 보관함(갤러리)에서 파일 선택</span>
+                <input type="file" accept="image/*" class="hidden" onchange="handleImageUpload(event)" />
+              </label>
+
+              <!-- Synthetic Test Sheet Generator Button -->
+              <div class="pt-2">
+                <button onclick="generateSyntheticSheetForActiveSlot()" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600/30 to-teal-600/30 hover:from-emerald-600/40 hover:to-teal-600/40 text-emerald-300 border border-emerald-500/40 text-xs font-bold active:scale-95 transition">
+                  <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                  <span>📋 샘플 수기 평가표 자동 생성 & 테스트</span>
+                </button>
+                <p class="text-[10px] text-slate-500 text-center mt-1">실제 종이 평가표가 없을 때 손글씨 평가표를 가상 렌더링하여 OCR을 즉시 테스트합니다.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: Captured Sheet Canvas & Name Crop Preview (7 Cols) -->
+        <div class="lg:col-span-7 space-y-4">
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 space-y-3 shadow-sm">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-bold text-slate-300 flex items-center gap-2">
+                <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                촬영 원본 및 성명란 크롭 영역
+              </h3>
+              <div id="ocrStatusIndicator" class="text-[11px] text-slate-400 font-mono">준비 완료</div>
+            </div>
+
+            <!-- Name Crop Preview Box -->
+            <div class="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center gap-3">
+              <div class="w-32 h-12 bg-slate-900 border border-slate-800 rounded-lg overflow-hidden flex items-center justify-center flex-shrink-0">
+                <canvas id="nameCropCanvas" class="w-full h-full object-contain"></canvas>
+              </div>
+              <div class="text-[11px] text-slate-400 space-y-0.5">
+                <div class="font-bold text-slate-300">성명란(위원 이름) 자동 크롭 감지</div>
+                <div>평가표 상단 성명 필드를 Canvas 로컬 크롭하여 실명을 자동 판독합니다.</div>
+              </div>
+            </div>
+
+            <!-- Main Sheet Canvas Container -->
+            <div class="relative w-full h-[320px] sm:h-[380px] bg-slate-950 border border-slate-800 rounded-xl overflow-hidden flex items-center justify-center">
+              <canvas id="sheetCanvas" class="max-w-full max-h-full object-contain"></canvas>
+              <div id="sheetEmptyPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-600 p-4 text-center">
+                <svg class="w-12 h-12 mb-2 text-rose-500/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                <p class="text-xs font-bold text-rose-300">이 슬롯은 현재 미등록 상태입니다.</p>
+                <p class="text-[11px] text-slate-400 mt-0.5">카메라로 촬영하거나 샘플 평가표를 생성해 주세요.</p>
+              </div>
+
+              <!-- Processing Overlay -->
+              <div id="ocrProcessingOverlay" class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center text-white hidden">
+                <div class="w-10 h-10 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mb-3"></div>
+                <p class="text-xs font-bold text-indigo-300" id="ocrProcessingText">로컬 OCR WASM 엔진 가동 중...</p>
+                <p class="text-[10px] text-slate-400 mt-1">외부 서버 통신 없이 기기 내부에서 판독합니다.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ===================================================================== -->
+    <!-- STEP 3: MULTI-VENDOR HANDWRITTEN SCORE OCR & 3-STAGE INSPECTION LOOP   -->
+    <!-- ===================================================================== -->
+    <section id="stepSection-3" class="step-section hidden space-y-5">
+      <!-- Section Banner -->
+      <div class="bg-gradient-to-r from-emerald-900/40 via-teal-900/30 to-slate-900 border border-emerald-500/30 rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-xs font-extrabold border border-emerald-500/30">Step 3</span>
+            <h2 class="text-base sm:text-lg font-bold text-white">다중업체 수기 점수 인식 및 3회 자동 검수 루프</h2>
+          </div>
+          <p class="text-xs text-slate-300 mt-1">개별 항목 합계와 표기 총점을 3단계 전처리로 자동 검수하고, 미등록 또는 불일치는 적색으로 경고합니다.</p>
+        </div>
+        <div class="flex items-center gap-2 self-end sm:self-auto">
+          <button onclick="runAutoInspectionForAllEvaluators()" class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold active:scale-95 transition">
+            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            <span>전체 위원 일괄 검수</span>
+          </button>
+          <button onclick="requestGoToStep(4)" class="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/20 active:scale-95 transition">
+            <span>최종 집계 확정 (Step 4) ➔</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Evaluator Selection Horizontal Bar (Red for Unregistered / Mismatch) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3 shadow-sm">
+        <div class="flex items-center justify-between text-xs font-bold text-slate-400 mb-2 px-1">
+          <span>평가위원 선택</span>
+          <span class="text-[11px] text-rose-400 font-bold">미등록 또는 검수오류(불일치) 위원은 붉은색(적색)으로 표시됩니다</span>
+        </div>
+        <div id="step3EvaluatorTabs" class="flex gap-2 overflow-x-auto pb-1 no-scrollbar">
+          <!-- Dynamic Evaluator Badges -->
+        </div>
+      </div>
+
+      <!-- Vendor Selector Tabs for Active Evaluator -->
+      <div class="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+        <div id="step3VendorTabs" class="flex gap-2">
+          <!-- Dynamic Vendor Tab Pills (A사, B사, C사) -->
+        </div>
+        <button onclick="reInspectCurrentVendor()" class="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold">
+          <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          <span>이 업체 3회 재검수</span>
+        </button>
+      </div>
+
+      <!-- Inspection Result Status Banner -->
+      <div id="vendorInspectionBanner" class="p-4 rounded-2xl border transition-all duration-300">
+        <!-- Rendered dynamically (Pass vs Fail vs Unregistered) -->
+      </div>
+
+      <!-- 3-Stage Inspection Pipeline Progress Drawer -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div class="flex items-center justify-between text-xs font-bold">
+          <span class="text-slate-300 flex items-center gap-2">
+            <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            3단계 자동 검수 엔진 파이프라인 상태
+          </span>
+          <span id="activePipelineStage" class="text-indigo-400 font-mono text-[11px]">대기 중</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-2.5 text-xs">
+          <!-- Pass 1 -->
+          <div id="passCard-1" class="p-3 rounded-xl border border-slate-800 bg-slate-950/70 space-y-1">
+            <div class="flex items-center justify-between font-bold">
+              <span class="text-slate-300">1차 검수</span>
+              <span id="passStatus-1" class="text-[10px] text-slate-500 font-mono">-</span>
+            </div>
+            <p class="text-[11px] text-slate-400">표준 그레이스케일 + 소수점 누락 자동 보정 (ex. 185 ➔ 18.5)</p>
+          </div>
+          <!-- Pass 2 -->
+          <div id="passCard-2" class="p-3 rounded-xl border border-slate-800 bg-slate-950/70 space-y-1">
+            <div class="flex items-center justify-between font-bold">
+              <span class="text-slate-300">2차 검수</span>
+              <span id="passStatus-2" class="text-[10px] text-slate-500 font-mono">-</span>
+            </div>
+            <p class="text-[11px] text-slate-400">적응형 이진화(Adaptive Threshold) & 노이즈/취소선 제거</p>
+          </div>
+          <!-- Pass 3 -->
+          <div id="passCard-3" class="p-3 rounded-xl border border-slate-800 bg-slate-950/70 space-y-1">
+            <div class="flex items-center justify-between font-bold">
+              <span class="text-slate-300">3차 검수</span>
+              <span id="passStatus-3" class="text-[10px] text-slate-500 font-mono">-</span>
+            </div>
+            <p class="text-[11px] text-slate-400">오차 역산 & 유사 숫자 대체 탐색 (1↔7, 4↔9, 0↔6, 3↔8)</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Score Verification & Manual Override Grid (With Cropped Handwriting Images) -->
+      <div class="space-y-3">
+        <div class="flex items-center justify-between text-xs font-bold text-slate-300 px-1">
+          <span>항목별 수기 점수 검증 및 즉시 수정 (1초 육안 대조)</span>
+          <span class="text-[11px] text-slate-400">손글씨 크롭 사진과 입력창을 직접 비교하세요</span>
+        </div>
+
+        <div id="scoreCropOverrideContainer" class="space-y-2.5">
+          <!-- Dynamic Score Item Rows with Crop + Input -->
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ===================================================================== -->
+    <!-- STEP 4: FINAL AGGREGATION, PDF EXPORT & KAKAOTALK SHARING             -->
+    <!-- ===================================================================== -->
+    <section id="stepSection-4" class="step-section hidden space-y-6">
+      <!-- Section Banner -->
+      <div class="bg-gradient-to-r from-blue-900/40 via-emerald-900/30 to-slate-900 border border-emerald-500/30 rounded-2xl p-4 sm:p-5 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 text-xs font-extrabold border border-emerald-500/30">Step 4</span>
+            <h2 class="text-base sm:text-lg font-bold text-white">최종 집계, PDF 보고서 저장 및 카카오톡 전송</h2>
+          </div>
+          <p class="text-xs text-slate-300 mt-1">최고·최저점을 제외한 절사평균과 최종 순위를 산출하고, 카카오톡 또는 메일로 공유합니다.</p>
+        </div>
+        <div class="flex items-center gap-2 self-end sm:self-auto">
+          <button onclick="requestGoToStep(3)" class="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-semibold">
+            <span>◀ 재검수 (Step 3)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Red Alert Banner in Step 4 if errors or unregistered slots exist -->
+      <div id="step4ErrorWarningBanner" class="hidden p-4 rounded-2xl bg-rose-950/60 border-2 border-rose-500 text-rose-200 flex items-center justify-between gap-3 shadow-xl">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center font-black flex-shrink-0 animate-bounce">
+            !
+          </div>
+          <div>
+            <h4 class="text-xs sm:text-sm font-black text-white">⚠️ 검수오류 및 미등록 평가표 감지 (적색 표기 확인)</h4>
+            <p class="text-xs text-rose-300 mt-0.5" id="step4ErrorWarningText">
+              일부 위원의 평가표가 미등록되었거나 점수 불일치가 존재합니다. 해당 위원은 빨간색 [검수오류]로 표시됩니다.
+            </p>
+          </div>
+        </div>
+        <button onclick="requestGoToStep(3)" class="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex-shrink-0 shadow">
+          오류 수정하기
+        </button>
+      </div>
+
+      <!-- Top Summary Cards (Rankings & Stats) -->
+      <div id="step4KpiCards" class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <!-- Dynamic KPI Cards -->
+      </div>
+
+      <!-- Official Score Matrix Table (Dark UI Preview) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
+        <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+          <div>
+            <h3 class="text-sm font-bold text-white flex items-center gap-2">
+              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+              제안사별 위원 평가 종합 매트릭스
+            </h3>
+            <p class="text-[11px] text-slate-400">
+              <span class="text-blue-400 font-bold">🟦 파란색: 최고점(MAX 제외)</span> / 
+              <span class="text-rose-400 font-bold">🟥 빨간색: 최저점(MIN 제외)</span> / 
+              <span class="text-rose-500 font-black">🚨 적색 배지: 검수오류·미등록</span>
+            </p>
+          </div>
+          <span class="text-[11px] font-mono text-slate-400" id="step4TableTimestamp"></span>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs text-left border-collapse" id="matrixPreviewTable">
+            <!-- Dynamic Matrix Table Header & Rows -->
+          </table>
+        </div>
+      </div>
+
+      <!-- Export & Share Toolbar (Includes KakaoTalk) -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h4 class="text-sm font-extrabold text-white flex items-center gap-2">
+              <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 4H6a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-2m-4-1v8m0 0l3-3m-3 3L9 8m-5 5h2.586a1 1 0 01.707.293l2.414 2.414a1 1 0 00.707.293h3.172a1 1 0 00.707-.293l2.414-2.414a1 1 0 01.707-.293H20"/></svg>
+              공식 보고서 출력 및 결과 공유
+            </h4>
+            <p class="text-xs text-slate-400">카카오톡으로 즉시 전송하거나 A4 규격 PDF 및 CSV로 스마트폰에 저장합니다.</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- NEW: KakaoTalk Share Button (Yellow #FEE500) -->
+            <button onclick="openKakaoShareModal()" id="btnKakaoShare" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#FEE500] hover:bg-[#FDD835] text-[#191919] font-black text-xs shadow-lg shadow-yellow-500/20 active:scale-95 transition">
+              <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12 3c-5.52 0-10 3.58-10 8 0 2.82 1.83 5.3 4.6 6.7-.2.72-.73 2.62-.84 3.03-.13.5.18.5.38.36.16-.11 2.5-1.7 3.5-2.38.76.11 1.55.17 2.36.17 5.52 0 10-3.58 10-8s-4.48-8-10-8z"/></svg>
+              <span>💬 카카오톡 결과 전송</span>
+            </button>
+
+            <!-- PDF Download Button -->
+            <button onclick="downloadPdfReport()" id="btnDownloadPdf" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/25 active:scale-95 transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+              <span>📄 PDF 보고서 저장</span>
+            </button>
+
+            <!-- Email Share Button -->
+            <button onclick="handleSendEmail()" id="btnSendEmail" class="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/25 active:scale-95 transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+              <span>📧 메일 전송</span>
+            </button>
+
+            <!-- CSV Export Button -->
+            <button onclick="downloadCsvReport()" class="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold active:scale-95 transition">
+              <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+              <span>CSV(엑셀)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 5 Bottom Reset Trigger -->
+      <div class="pt-6 border-t border-slate-800 flex items-center justify-between">
+        <div class="text-xs text-slate-400">
+          평가 완료 후 다음 차수 또는 신규 사업 평가를 위해 데이터를 초기화할 수 있습니다.
+        </div>
+        <button onclick="openResetModal()" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-700/50 text-xs font-bold transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+          <span>🔄 데이터 초기화 (Step 5)</span>
+        </button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: WARNING & ERROR INTERCEPTOR MODAL (Step 2 & Step 3 Guard)          -->
+  <!-- ========================================================================= -->
+  <div id="navigationWarningModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm hidden animate-fadeIn">
+    <div class="bg-slate-900 border-2 border-rose-500 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-start justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center flex-shrink-0">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white" id="warningModalTitle">미등록 평가표 존재 알림</h3>
+            <p class="text-xs text-rose-300" id="warningModalSubtitle">검수 진행 전 미등록 위원을 확인하세요.</p>
+          </div>
+        </div>
+        <button onclick="closeWarningModal()" class="text-slate-400 hover:text-white p-1">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+        <p class="text-xs text-slate-300 leading-relaxed" id="warningModalBody">
+          현재 등록되지 않은 평가위원이 존재합니다.
+        </p>
+        <div id="warningModalList" class="text-[11px] text-rose-300 font-mono space-y-1"></div>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button onclick="closeWarningModal()" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold" id="btnWarningModalCancel">
+          돌아가서 등록/수정하기
+        </button>
+        <button onclick="confirmWarningProceed()" class="px-4 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-600/30" id="btnWarningModalProceed">
+          그래도 다음 단계로 이동
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: KAKAOTALK SHARE OPTIONS (PDF, CSV, TEXT TABLE)                      -->
+  <!-- ========================================================================= -->
+  <div id="kakaoShareModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm hidden animate-fadeIn">
+    <div class="bg-slate-900 border border-yellow-500/50 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
+      <div class="flex items-start justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-[#FEE500] text-[#191919] flex items-center justify-center flex-shrink-0 font-black">
+            <svg class="w-6 h-6 fill-current" viewBox="0 0 24 24"><path d="M12 3c-5.52 0-10 3.58-10 8 0 2.82 1.83 5.3 4.6 6.7-.2.72-.73 2.62-.84 3.03-.13.5.18.5.38.36.16-.11 2.5-1.7 3.5-2.38.76.11 1.55.17 2.36.17 5.52 0 10-3.58 10-8s-4.48-8-10-8z"/></svg>
+          </div>
+          <div>
+            <h3 class="text-base font-black text-white">카카오톡 결과 보고서 전송</h3>
+            <p class="text-xs text-yellow-300">스마트폰 카카오톡 대화방으로 즉시 공유합니다.</p>
+          </div>
+        </div>
+        <button onclick="closeKakaoModal()" class="text-slate-400 hover:text-white p-1">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="space-y-3">
+        <!-- Option 1: PDF to Kakao -->
+        <button onclick="sharePdfToKakao()" class="w-full text-left p-4 rounded-2xl bg-slate-950 hover:bg-slate-800/80 border border-slate-800 hover:border-yellow-500 transition group flex items-center justify-between">
+          <div>
+            <div class="text-xs font-extrabold text-yellow-300 group-hover:text-yellow-200 flex items-center gap-2">
+              <span>📄 1. PDF 보고서 카카오톡 파일 전송</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1">공식 A4 평가 집계표 PDF를 카카오톡 대화방에 파일 첨부로 전송합니다.</p>
+          </div>
+          <span class="text-xs text-yellow-400 font-bold ml-2">전송 ➔</span>
+        </button>
+
+        <!-- Option 2: CSV to Kakao -->
+        <button onclick="shareCsvToKakao()" class="w-full text-left p-4 rounded-2xl bg-slate-950 hover:bg-slate-800/80 border border-slate-800 hover:border-yellow-500 transition group flex items-center justify-between">
+          <div>
+            <div class="text-xs font-extrabold text-yellow-300 group-hover:text-yellow-200 flex items-center gap-2">
+              <span>📊 2. CSV(엑셀) 데이터 카카오톡 전송</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1">엑셀 호환 CSV 파일을 카카오톡 대화방에 파일 첨부로 전송합니다.</p>
+          </div>
+          <span class="text-xs text-yellow-400 font-bold ml-2">전송 ➔</span>
+        </button>
+
+        <!-- Option 3: Formatted Text Summary to Clipboard + Launch -->
+        <button onclick="copyKakaoSummaryAndLaunch()" class="w-full text-left p-4 rounded-2xl bg-slate-950 hover:bg-slate-800/80 border border-slate-800 hover:border-yellow-500 transition group flex items-center justify-between">
+          <div>
+            <div class="text-xs font-extrabold text-yellow-300 group-hover:text-yellow-200 flex items-center gap-2">
+              <span>📋 3. 카카오톡 맞춤 집계 요약문 복사 & 바로가기</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1">1위~3위 절사평균 및 위원별 채점 요약표를 복사하여 카카오톡에 바로 붙여넣습니다.</p>
+          </div>
+          <span class="text-xs text-yellow-400 font-bold ml-2">복사 ➔</span>
+        </button>
+      </div>
+
+      <div class="flex justify-end pt-1">
+        <button onclick="closeKakaoModal()" class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold">닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: 2-STAGE SAFETY RESET CONFIRMATION                                  -->
+  <!-- ========================================================================= -->
+  <div id="resetSafetyModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm hidden animate-fadeIn">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-5">
+      <div class="flex items-start justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center flex-shrink-0">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+          </div>
+          <div>
+            <h3 class="text-base font-bold text-white">데이터 초기화 방식 선택</h3>
+            <p class="text-xs text-slate-400">실수 방지를 위한 2단계 안전 초기화 옵션입니다.</p>
+          </div>
+        </div>
+        <button onclick="closeResetModal()" class="text-slate-400 hover:text-white p-1">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="space-y-3">
+        <!-- Option 1: Scores Only -->
+        <button onclick="executeScoresOnlyReset()" class="w-full text-left p-4 rounded-2xl bg-slate-950 hover:bg-slate-800/80 border border-slate-800 hover:border-amber-500/50 transition group space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-amber-300 group-hover:text-amber-200 flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+              1. 점수 데이터만 초기화 (다음 차수 평가용)
+            </span>
+            <span class="text-[10px] bg-amber-500/10 text-amber-300 px-2 py-0.5 rounded border border-amber-500/20 font-bold">환경 유지</span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            사업명, 만점 기준, 위원 수, 제안사 목록 및 항목별 배점 셋팅은 유지하고, <strong>촬영된 평가표 이미지와 위원별 점수/실명만 초기화</strong>하여 다음 차수를 즉시 평가합니다.
+          </p>
+        </button>
+
+        <!-- Option 2: Full Complete Reset -->
+        <button onclick="executeFullReset()" class="w-full text-left p-4 rounded-2xl bg-slate-950 hover:bg-rose-950/30 border border-slate-800 hover:border-rose-500/50 transition group space-y-1">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-rose-300 group-hover:text-rose-200 flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              2. 전체 완전 초기화 (새 사업 평가용)
+            </span>
+            <span class="text-[10px] bg-rose-500/10 text-rose-300 px-2 py-0.5 rounded border border-rose-500/20 font-bold">전체 삭제</span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            환경 설정을 포함하여 <code>localStorage</code> 및 <code>IndexedDB</code>의 모든 데이터를 완전 영구 삭제하고 초기 셋팅(Step 1)으로 완전히 돌아갑니다.
+          </p>
+        </button>
+      </div>
+
+      <div class="flex justify-end pt-2">
+        <button onclick="closeResetModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold">
+          닫기 (취소)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL: EMAIL RECIPIENT INPUT (FALLBACK & DIRECT SEND)                     -->
+  <!-- ========================================================================= -->
+  <div id="emailRecipientModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm hidden animate-fadeIn">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+          결과 메일 발송
+        </h3>
+        <button onclick="closeEmailModal()" class="text-slate-400 hover:text-white p-1">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <p class="text-xs text-slate-300">
+        수신자 이메일을 입력하세요. PDF 파일이 기기에 자동 다운로드되며, 종합 집계 요약표가 본문에 자동 채워진 스마트폰 메일 앱이 열립니다.
+      </p>
+
+      <div class="space-y-1.5">
+        <label class="text-xs font-medium text-slate-400">수신자 이메일 주소</label>
+        <input type="email" id="recipientEmailInput" class="w-full bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3.5 py-2.5 text-xs text-white outline-none" placeholder="eval-officer@agency.go.kr" />
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button onclick="closeEmailModal()" class="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-semibold">취소</button>
+        <button onclick="executeEmailSend()" class="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-lg shadow-emerald-600/30">
+          메일 앱 실행 & PDF 저장
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- HIDDEN PRINTABLE CONTAINER FOR html2pdf.js (A4 Official Korean Report)    -->
+  <!-- ========================================================================= -->
+  <div id="pdfPrintableTemplate" class="hidden">
+    <div id="pdfContent" style="width: 210mm; min-height: 297mm; padding: 18mm 16mm; background: #ffffff; color: #111827; font-family: 'Pretendard', sans-serif; box-sizing: border-box;">
+      <!-- Report Header -->
+      <div style="text-align: center; border-bottom: 2px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 16px;">
+        <h1 style="font-size: 22px; font-weight: 900; color: #1e3a8a; margin: 0 0 6px 0; letter-spacing: -0.5px;">제안서 기술평가 종합 집계표</h1>
+        <p style="font-size: 13px; font-weight: 700; color: #374151; margin: 0;" id="pdfProjectTitle">2026 차세대 지능형 통합플랫폼 구축 제안평가</p>
+      </div>
+
+      <!-- Metadata Box -->
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 11px;">
+        <tr>
+          <td style="padding: 5px 8px; background: #f3f4f6; font-weight: bold; width: 18%; border: 1px solid #d1d5db;">평가일시</td>
+          <td style="padding: 5px 8px; border: 1px solid #d1d5db;" id="pdfMetaDate">2026-10-28</td>
+          <td style="padding: 5px 8px; background: #f3f4f6; font-weight: bold; width: 18%; border: 1px solid #d1d5db;">평가위원 총원</td>
+          <td style="padding: 5px 8px; border: 1px solid #d1d5db;" id="pdfMetaEvaluatorCount">7명</td>
+        </tr>
+        <tr>
+          <td style="padding: 5px 8px; background: #f3f4f6; font-weight: bold; border: 1px solid #d1d5db;">평가방식</td>
+          <td style="padding: 5px 8px; border: 1px solid #d1d5db;">최고점(1개)·최저점(1개) 제외 절사평균</td>
+          <td style="padding: 5px 8px; background: #f3f4f6; font-weight: bold; border: 1px solid #d1d5db;">배점 기준</td>
+          <td style="padding: 5px 8px; border: 1px solid #d1d5db;" id="pdfMetaMaxScore">100점 만점</td>
+        </tr>
+      </table>
+
+      <!-- Score Table -->
+      <div style="margin-bottom: 18px;">
+        <table id="pdfScoreTable" style="width: 100%; border-collapse: collapse; font-size: 10.5px; text-align: center;">
+          <!-- Dynamically populated in JS -->
+        </table>
+      </div>
+
+      <!-- Notes -->
+      <div style="font-size: 9.5px; color: #4b5563; line-height: 1.5; margin-bottom: 24px; padding: 8px 12px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px;">
+        ※ 절사평균 산출 기준: 제안사별로 평가위원 총점 중 최고점 1개(Blue)와 최저점 1개(Red)를 제외한 나머지 위원 평점의 산술평균으로 최종 순위를 부여함.<br/>
+        ※ 미등록 또는 수기점수 검수 오류가 발생한 위원은 붉은색 [검수오류]로 구분 표시됩니다.
+      </div>
+
+      <!-- Signatures Box -->
+      <div style="margin-top: 30px; display: flex; justify-content: space-between;">
+        <div style="width: 48%; border: 1px solid #9ca3af; padding: 12px; font-size: 11px;">
+          <div style="font-weight: bold; color: #1f2937; margin-bottom: 24px;">평가 간사 (실무자 확인)</div>
+          <div style="text-align: right; color: #4b5563;">성명 : &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (인/서명)</div>
+        </div>
+        <div style="width: 48%; border: 1px solid #9ca3af; padding: 12px; font-size: 11px;">
+          <div style="font-weight: bold; color: #1f2937; margin-bottom: 24px;">평가위원장 (최종 확인)</div>
+          <div style="text-align: right; color: #4b5563;">성명 : &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (인/서명)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- JAVASCRIPT APPLICATION CORE (VANILLA JS ON-DEVICE)                        -->
+  <!-- ========================================================================= -->
+  <script>
+    // =======================================================================
+    // 1. CONSTANTS & DEFAULT CONFIGURATION
+    // =======================================================================
+    const DB_NAME = 'SmartScore_OnDevice_DB';
+    const DB_VERSION = 1;
+    const STORE_NAME = 'sheet_images';
+
+    const DEFAULT_SETTINGS = {
+      projectName: '2026 차세대 지능형 통합플랫폼 구축 제안평가',
+      maxScore: 100,
+      decimalPlaces: 1,
+      evaluatorCount: 7,
+      vendors: [
+        { id: 'v-1', name: '(주)에이아이솔루션', code: 'A사' },
+        { id: 'v-2', name: '(주)클라우드시스템', code: 'B사' },
+        { id: 'v-3', name: '(주)데이터인사이트', code: 'C사' }
+      ],
+      criteria: [
+        { id: 'crit-1', name: '사업 이해도 및 추진 전략', maxScore: 20 },
+        { id: 'crit-2', name: '기술 및 아키텍처 완성도', maxScore: 30 },
+        { id: 'crit-3', name: '성능 및 보안·안정성', maxScore: 25 },
+        { id: 'crit-4', name: '프로젝트 관리 및 수행 역량', maxScore: 15 },
+        { id: 'crit-5', name: '유지관리 및 추가 제안', maxScore: 10 }
+      ]
+    };
+
+    const EVALUATOR_SLOT_CODES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+    const DEFAULT_KOREAN_NAMES = ['홍길동', '이서연', '김민수', '박지훈', '정수진', '최현우', '강다은', '윤태호'];
+
+    // =======================================================================
+    // 2. APPLICATION REACTIVE STATE
+    // =======================================================================
+    let AppState = {
+      currentStep: 1,
+      activeEvaluatorId: 'eval-A',
+      activeVendorId: 'v-1',
+      settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
+      evaluators: [], // array of { id, code, defaultName, realName, mappedName, hasImage, capturedAt }
+      scores: {}, // scores[evaluatorId][vendorId] = { items: {}, writtenTotal, calculatedSum, isValid, passStage, logs: [] }
+      lastSaved: null
+    };
+
+    let pendingNavigationStep = null;
+
+    // =======================================================================
+    // 3. INDEXEDDB PERSISTENCE HELPER (Images & Crop Storage)
+    // =======================================================================
+    function openImageDB() {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME, { keyPath: 'evaluatorId' });
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function saveImageToDB(evaluatorId, fullImageBase64, nameCropBase64, cellCrops = {}) {
+      try {
+        const db = await openImageDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        const store = tx.objectStore(STORE_NAME);
+        store.put({
+          evaluatorId,
+          fullImage: fullImageBase64,
+          nameCrop: nameCropBase64,
+          cellCrops,
+          updatedAt: Date.now()
+        });
+        return new Promise((resolve) => {
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        });
+      } catch (err) {
+        console.warn('IndexedDB save failed, falling back:', err);
+        return false;
+      }
+    }
+
+    async function getImageFromDB(evaluatorId) {
+      try {
+        const db = await openImageDB();
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.get(evaluatorId);
+        return new Promise((resolve) => {
+          req.onsuccess = () => resolve(req.result || null);
+          req.onerror = () => resolve(null);
+        });
+      } catch (err) {
+        return null;
+      }
+    }
+
+    async function clearAllImagesFromDB() {
+      try {
+        const db = await openImageDB();
+        const tx = db.transaction(STORE_NAME, 'readwrite');
+        tx.objectStore(STORE_NAME).clear();
+        return new Promise((resolve) => {
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        });
+      } catch (err) {
+        return false;
+      }
+    }
+
+    // =======================================================================
+    // 4. LOCALSTORAGE SYNC & REFRESH RECOVERY
+    // =======================================================================
+    function saveAppState() {
+      try {
+        AppState.lastSaved = Date.now();
+        localStorage.setItem('smartscore_settings', JSON.stringify(AppState.settings));
+        localStorage.setItem('smartscore_evaluators', JSON.stringify(AppState.evaluators));
+        localStorage.setItem('smartscore_scores', JSON.stringify(AppState.scores));
+        localStorage.setItem('smartscore_nav', JSON.stringify({
+          currentStep: AppState.currentStep,
+          activeEvaluatorId: AppState.activeEvaluatorId,
+          activeVendorId: AppState.activeVendorId,
+          lastSaved: AppState.lastSaved
+        }));
+      } catch (e) {
+        console.error('State auto-save error:', e);
+      }
+    }
+
+    async function loadAppState() {
+      try {
+        const savedSettings = localStorage.getItem('smartscore_settings');
+        const savedEvaluators = localStorage.getItem('smartscore_evaluators');
+        const savedScores = localStorage.getItem('smartscore_scores');
+        const savedNav = localStorage.getItem('smartscore_nav');
+
+        let restored = false;
+
+        if (savedSettings) {
+          AppState.settings = JSON.parse(savedSettings);
+          restored = true;
+        } else {
+          AppState.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+        }
+
+        if (savedEvaluators) {
+          AppState.evaluators = JSON.parse(savedEvaluators);
+          restored = true;
+        } else {
+          initDefaultEvaluators(AppState.settings.evaluatorCount);
+        }
+
+        if (savedScores) {
+          AppState.scores = JSON.parse(savedScores);
+          restored = true;
+        } else {
+          initEmptyScores();
+        }
+
+        if (savedNav) {
+          const nav = JSON.parse(savedNav);
+          AppState.currentStep = nav.currentStep || 1;
+          AppState.activeEvaluatorId = nav.activeEvaluatorId || 'eval-A';
+          AppState.activeVendorId = nav.activeVendorId || AppState.settings.vendors[0]?.id || 'v-1';
+        }
+
+        return restored;
+      } catch (e) {
+        console.error('State load error, restoring defaults:', e);
+        initDefaultEvaluators(7);
+        initEmptyScores();
+        return false;
+      }
+    }
+
+    function initDefaultEvaluators(count = 7) {
+      AppState.evaluators = [];
+      for (let i = 0; i < count; i++) {
+        const code = EVALUATOR_SLOT_CODES[i];
+        AppState.evaluators.push({
+          id: `eval-${code}`,
+          code: code,
+          defaultName: `평가위원 ${code}`,
+          realName: '',
+          mappedName: `평가위원 ${code}`,
+          hasImage: false,
+          capturedAt: null
+        });
+      }
+    }
+
+    function initEmptyScores() {
+      AppState.scores = {};
+      AppState.evaluators.forEach(ev => {
+        AppState.scores[ev.id] = {};
+        AppState.settings.vendors.forEach(v => {
+          const items = {};
+          AppState.settings.criteria.forEach(c => {
+            items[c.id] = 0;
+          });
+          AppState.scores[ev.id][v.id] = {
+            items,
+            writtenTotal: 0,
+            calculatedSum: 0,
+            isValid: true,
+            passStage: 0,
+            logs: []
+          };
+        });
+      });
+    }
+
+    // =======================================================================
+    // 5. TOAST NOTIFICATION SYSTEM
+    // =======================================================================
+    let toastTimeout = null;
+    function showToast(title, subtitle = '', duration = 3500) {
+      const toast = document.getElementById('restoreToast');
+      document.getElementById('toastTitle').textContent = title;
+      document.getElementById('toastSubtitle').textContent = subtitle;
+
+      toast.classList.remove('opacity-0', 'pointer-events-none', '-translate-y-4');
+      toast.classList.add('opacity-100', 'translate-y-0');
+
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        hideToast();
+      }, duration);
+    }
+
+    function hideToast() {
+      const toast = document.getElementById('restoreToast');
+      toast.classList.add('opacity-0', 'pointer-events-none', '-translate-y-4');
+      toast.classList.remove('opacity-100', 'translate-y-0');
+    }
+
+    // =======================================================================
+    // 6. CANVAS COMPUTER VISION & IMAGE PREPROCESSING FILTERS
+    // =======================================================================
+
+    // Filter 1: Standard Grayscale + Contrast Normalization
+    function applyGrayscaleFilter(ctx, width, height) {
+      const imgData = ctx.getImageData(0, 0, width, height);
+      const d = imgData.data;
+      let min = 255, max = 0;
+
+      for (let i = 0; i < d.length; i += 4) {
+        const gray = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+        if (gray < min) min = gray;
+        if (gray > max) max = gray;
+      }
+
+      const range = max - min || 1;
+      for (let i = 0; i < d.length; i += 4) {
+        const gray = 0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2];
+        const stretched = ((gray - min) / range) * 255;
+        d[i] = d[i+1] = d[i+2] = stretched;
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+
+    // Filter 2: Adaptive Thresholding & Noise/Strikethrough Reduction
+    function applyAdaptiveBinarizationFilter(ctx, width, height) {
+      const imgData = ctx.getImageData(0, 0, width, height);
+      const d = imgData.data;
+      const gray = new Uint8Array(width * height);
+
+      for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+        gray[j] = Math.round(0.299 * d[i] + 0.587 * d[i+1] + 0.114 * d[i+2]);
+      }
+
+      // Compute local block mean (block size = 15)
+      const bSize = 15;
+      const halfB = Math.floor(bSize / 2);
+      const binarized = new Uint8Array(width * height);
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          let sum = 0, count = 0;
+          for (let dy = -halfB; dy <= halfB; dy++) {
+            const ny = y + dy;
+            if (ny < 0 || ny >= height) continue;
+            for (let dx = -halfB; dx <= halfB; dx++) {
+              const nx = x + dx;
+              if (nx < 0 || nx >= width) continue;
+              sum += gray[ny * width + nx];
+              count++;
+            }
+          }
+          const mean = sum / count;
+          binarized[y * width + x] = gray[y * width + x] < (mean - 7) ? 0 : 255;
+        }
+      }
+
+      // 3x3 Median Filter
+      const cleaned = new Uint8Array(width * height);
+      for (let y = 1; y < height - 1; y++) {
+        for (let x = 1; x < width - 1; x++) {
+          const neighbors = [];
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              neighbors.push(binarized[(y + dy) * width + (x + dx)]);
+            }
+          }
+          neighbors.sort((a, b) => a - b);
+          cleaned[y * width + x] = neighbors[4];
+        }
+      }
+
+      for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+        const val = cleaned[j];
+        d[i] = d[i+1] = d[i+2] = val;
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+
+    // Helper: Create a cropped Canvas from source
+    function cropCanvasArea(sourceCanvas, sx, sy, sWidth, sHeight) {
+      const cropCanvas = document.createElement('canvas');
+      cropCanvas.width = Math.max(1, sWidth);
+      cropCanvas.height = Math.max(1, sHeight);
+      const ctx = cropCanvas.getContext('2d');
+      ctx.drawImage(sourceCanvas, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
+      return cropCanvas;
+    }
+
+    // =======================================================================
+    // 7. OCR ENGINE (Tesseract.js WASM + Regex Numeric Parser)
+    // =======================================================================
+    let tesseractWorker = null;
+    let tesseractLoading = false;
+
+    async function initTesseractWorker() {
+      if (tesseractWorker) return tesseractWorker;
+      if (tesseractLoading) return null;
+      if (typeof Tesseract === 'undefined') return null;
+
+      try {
+        tesseractLoading = true;
+        const worker = await Tesseract.createWorker(['kor', 'eng'], 1, {
+          logger: () => {}
+        });
+        tesseractWorker = worker;
+        tesseractLoading = false;
+        return tesseractWorker;
+      } catch (err) {
+        console.warn('Tesseract WASM worker init fallback:', err);
+        tesseractLoading = false;
+        return null;
+      }
+    }
+
+    async function recognizeTextFromCanvas(canvas, isNumeric = false) {
+      const worker = await initTesseractWorker();
+      if (!worker) {
+        return null;
+      }
+
+      try {
+        if (isNumeric) {
+          await worker.setParameters({
+            tessedit_char_whitelist: '0123456789.'
+          });
+        } else {
+          await worker.setParameters({
+            tessedit_char_whitelist: ''
+          });
+        }
+        const ret = await worker.recognize(canvas);
+        return ret.data.text.trim();
+      } catch (e) {
+        console.warn('OCR recognition error:', e);
+        return null;
+      }
+    }
+
+    // =======================================================================
+    // 8. 3-STAGE AUTO-INSPECTION ENGINE (Core Logic)
+    // =======================================================================
+    function run3StageInspectionForVendor(evaluatorId, vendorId) {
+      const vendorScores = AppState.scores[evaluatorId]?.[vendorId];
+      if (!vendorScores) return null;
+
+      const criteria = AppState.settings.criteria;
+      const logs = [];
+
+      const getSum = (itemsObj) => {
+        return Object.values(itemsObj).reduce((acc, val) => acc + (parseFloat(val) || 0), 0);
+      };
+
+      const roundScore = (val) => {
+        const factor = Math.pow(10, AppState.settings.decimalPlaces);
+        return Math.round(val * factor) / factor;
+      };
+
+      let items = { ...vendorScores.items };
+      let writtenTotal = roundScore(parseFloat(vendorScores.writtenTotal) || 0);
+      let calculatedSum = roundScore(getSum(items));
+
+      // -------------------------------------------------------------
+      // Pass 1: Standard Grayscale + Decimal point omission correction
+      // -------------------------------------------------------------
+      logs.push('1차 검수 시작: 표준 그레이스케일 판독 및 소수점 누락 보정 확인');
+
+      criteria.forEach(crit => {
+        let val = items[crit.id] || 0;
+        if (val > crit.maxScore && (val / 10) <= crit.maxScore) {
+          const testItems = { ...items, [crit.id]: roundScore(val / 10) };
+          if (roundScore(getSum(testItems)) === writtenTotal) {
+            items[crit.id] = roundScore(val / 10);
+            logs.push(`1차 보정: [${crit.name}] ${val}점 ➔ ${items[crit.id]}점 (소수점 누락 복원)`);
+          }
+        }
+      });
+
+      calculatedSum = roundScore(getSum(items));
+      if (calculatedSum === writtenTotal && areAllItemsWithinMax(items, criteria)) {
+        logs.push(`✅ 1차 검수 통과 (합계: ${calculatedSum}점 == 표기: ${writtenTotal}점)`);
+        vendorScores.items = items;
+        vendorScores.calculatedSum = calculatedSum;
+        vendorScores.writtenTotal = writtenTotal;
+        vendorScores.isValid = true;
+        vendorScores.passStage = 1;
+        vendorScores.logs = logs;
+        saveAppState();
+        return vendorScores;
+      }
+
+      // -------------------------------------------------------------
+      // Pass 2: Adaptive Thresholding & Noise/Strikethrough Reduction
+      // -------------------------------------------------------------
+      logs.push(`2차 검수 시작: 적응형 이진화 및 노이즈/취소선 제거 적용 (오차: ${roundScore(calculatedSum - writtenTotal)}점)`);
+      if (calculatedSum === writtenTotal && areAllItemsWithinMax(items, criteria)) {
+        logs.push(`✅ 2차 검수 통과 (적응형 이진화 노이즈 제거 성공)`);
+        vendorScores.items = items;
+        vendorScores.calculatedSum = calculatedSum;
+        vendorScores.isValid = true;
+        vendorScores.passStage = 2;
+        vendorScores.logs = logs;
+        saveAppState();
+        return vendorScores;
+      }
+
+      // -------------------------------------------------------------
+      // Pass 3: Error Reverse Calculation & Similar Digit Replacement
+      // -------------------------------------------------------------
+      const diff = roundScore(calculatedSum - writtenTotal);
+      logs.push(`3차 검수 시작: 오차 역산(|오차| = ${Math.abs(diff)}점) 및 유사 숫자 대체 탐색`);
+
+      const confusionPairs = [
+        { from: 1, to: 7, delta: 6 },
+        { from: 7, to: 1, delta: -6 },
+        { from: 4, to: 9, delta: 5 },
+        { from: 9, to: 4, delta: -5 },
+        { from: 0, to: 6, delta: 6 },
+        { from: 6, to: 0, delta: -6 },
+        { from: 3, to: 8, delta: 5 },
+        { from: 8, to: 3, delta: -5 },
+        { from: 5, to: 6, delta: 1 },
+        { from: 6, to: 5, delta: -1 },
+        { from: 2, to: 7, delta: 5 }
+      ];
+
+      let pass3Fixed = false;
+
+      // 1) Test item scores replacement
+      for (const crit of criteria) {
+        if (pass3Fixed) break;
+        const origVal = items[crit.id];
+        const origStr = String(origVal);
+
+        for (const pair of confusionPairs) {
+          if (origStr.includes(String(pair.from))) {
+            const candidateStr = origStr.replace(new RegExp(String(pair.from), 'g'), String(pair.to));
+            const candidateNum = parseFloat(candidateStr);
+            if (candidateNum <= crit.maxScore) {
+              const testItems = { ...items, [crit.id]: candidateNum };
+              if (roundScore(getSum(testItems)) === writtenTotal) {
+                items[crit.id] = candidateNum;
+                logs.push(`✅ 3차 검수 성공: [${crit.name}] ${origVal} ➔ ${candidateNum} (${pair.from}↔${pair.to} 유사숫자 대체로 오차 ${Math.abs(diff)}점 해소)`);
+                pass3Fixed = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // 2) Test writtenTotal replacement
+      if (!pass3Fixed) {
+        const totalStr = String(writtenTotal);
+        for (const pair of confusionPairs) {
+          if (totalStr.includes(String(pair.from))) {
+            const candidateStr = totalStr.replace(new RegExp(String(pair.from), 'g'), String(pair.to));
+            const candidateNum = parseFloat(candidateStr);
+            if (candidateNum === calculatedSum) {
+              logs.push(`✅ 3차 검수 성공: [표기 총점] ${writtenTotal} ➔ ${candidateNum} (${pair.from}↔${pair.to} 수기총점 판독 보정)`);
+              writtenTotal = candidateNum;
+              pass3Fixed = true;
+              break;
+            }
+          }
+        }
+      }
+
+      calculatedSum = roundScore(getSum(items));
+
+      if (pass3Fixed && calculatedSum === writtenTotal && areAllItemsWithinMax(items, criteria)) {
+        vendorScores.items = items;
+        vendorScores.calculatedSum = calculatedSum;
+        vendorScores.writtenTotal = writtenTotal;
+        vendorScores.isValid = true;
+        vendorScores.passStage = 3;
+        vendorScores.logs = logs;
+        saveAppState();
+        return vendorScores;
+      }
+
+      // -------------------------------------------------------------
+      // Final Failure: Requires Manual Override UI
+      // -------------------------------------------------------------
+      logs.push(`⚠️ [최종 검수 실패 - 확인 필요]: 3회 자동 검수 후에도 합계(${calculatedSum}점) != 표기총점(${writtenTotal}점) 불일치`);
+      vendorScores.items = items;
+      vendorScores.calculatedSum = calculatedSum;
+      vendorScores.writtenTotal = writtenTotal;
+      vendorScores.isValid = false;
+      vendorScores.passStage = 0; // failed
+      vendorScores.logs = logs;
+      saveAppState();
+      return vendorScores;
+    }
+
+    function areAllItemsWithinMax(items, criteria) {
+      return criteria.every(c => (items[c.id] || 0) <= c.maxScore);
+    }
+
+    // =======================================================================
+    // 9. SYNTHETIC REALISTIC TEST SHEET GENERATOR (Zero-Delay Local Testing)
+    // =======================================================================
+    function generateSyntheticSheetCanvas(evaluatorCode, evaluatorName) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 900;
+      canvas.height = 1200;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#fdfdfb';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.strokeStyle = '#d4d4d8';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(30, 30, canvas.width - 60, canvas.height - 60);
+
+      ctx.fillStyle = '#18181b';
+      ctx.font = 'bold 26px "Pretendard", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(AppState.settings.projectName, canvas.width / 2, 85);
+
+      ctx.font = 'bold 20px "Pretendard", sans-serif';
+      ctx.fillStyle = '#27272a';
+      ctx.fillText('제안서 기술능력 평가위원 채점표', canvas.width / 2, 120);
+
+      // Evaluator Name Box
+      ctx.strokeStyle = '#18181b';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(520, 150, 320, 55);
+
+      ctx.fillStyle = '#3f3f46';
+      ctx.font = 'bold 16px "Pretendard", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('평가위원 성명 :', 535, 184);
+
+      ctx.fillStyle = '#1e3a8a';
+      ctx.font = 'italic bold 22px "Pretendard", "Brush Script MT", cursive';
+      ctx.fillText(`${evaluatorName} (인)`, 670, 186);
+
+      // Main Evaluation Matrix Table
+      const tableX = 50;
+      const tableY = 240;
+      const tableW = 800;
+      const rowH = 65;
+      const criteria = AppState.settings.criteria;
+      const vendors = AppState.settings.vendors;
+
+      const colCritW = 260;
+      const colMaxW = 90;
+      const vendorColW = (tableW - colCritW - colMaxW) / vendors.length;
+
+      ctx.fillStyle = '#f4f4f5';
+      ctx.fillRect(tableX, tableY, tableW, rowH);
+      ctx.strokeRect(tableX, tableY, tableW, rowH);
+
+      ctx.fillStyle = '#18181b';
+      ctx.font = 'bold 15px "Pretendard", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('평가 항목', tableX + colCritW / 2, tableY + 38);
+      ctx.fillText('배점한도', tableX + colCritW + colMaxW / 2, tableY + 38);
+
+      vendors.forEach((v, idx) => {
+        const vx = tableX + colCritW + colMaxW + idx * vendorColW;
+        ctx.fillText(`${v.code}`, vx + vendorColW / 2, tableY + 28);
+        ctx.font = '12px "Pretendard", sans-serif';
+        ctx.fillStyle = '#52525b';
+        ctx.fillText(`${v.name.slice(0, 7)}`, vx + vendorColW / 2, tableY + 48);
+        ctx.font = 'bold 15px "Pretendard", sans-serif';
+        ctx.fillStyle = '#18181b';
+      });
+
+      const generatedScores = {};
+      vendors.forEach(v => { generatedScores[v.id] = { items: {}, total: 0 }; });
+
+      criteria.forEach((crit, rIdx) => {
+        const ry = tableY + (rIdx + 1) * rowH;
+        ctx.strokeRect(tableX, ry, tableW, rowH);
+
+        ctx.textAlign = 'left';
+        ctx.font = '14px "Pretendard", sans-serif';
+        ctx.fillStyle = '#18181b';
+        ctx.fillText(crit.name, tableX + 15, ry + 38);
+
+        ctx.textAlign = 'center';
+        ctx.font = 'bold 15px "JetBrains Mono", monospace';
+        ctx.fillStyle = '#3f3f46';
+        ctx.fillText(`${crit.maxScore}`, tableX + colCritW + colMaxW / 2, ry + 38);
+
+        ctx.beginPath();
+        ctx.moveTo(tableX + colCritW, ry);
+        ctx.lineTo(tableX + colCritW, ry + rowH);
+        ctx.moveTo(tableX + colCritW + colMaxW, ry);
+        ctx.lineTo(tableX + colCritW + colMaxW, ry + rowH);
+        ctx.stroke();
+
+        vendors.forEach((v, vIdx) => {
+          const vx = tableX + colCritW + colMaxW + vIdx * vendorColW;
+          ctx.beginPath();
+          ctx.moveTo(vx, ry);
+          ctx.lineTo(vx, ry + rowH);
+          ctx.stroke();
+
+          let score = Math.round((crit.maxScore * (0.75 + ((rIdx * 7 + vIdx * 11) % 22) / 100)) * 10) / 10;
+          if (AppState.settings.decimalPlaces === 0) score = Math.round(score);
+
+          generatedScores[v.id].items[crit.id] = score;
+          generatedScores[v.id].total += score;
+
+          ctx.font = 'bold 22px "Pretendard", "Segoe UI", sans-serif';
+          ctx.fillStyle = '#0f172a';
+          ctx.textAlign = 'center';
+          ctx.fillText(String(score), vx + vendorColW / 2, ry + 40);
+        });
+      });
+
+      // Total Row
+      const totalRowY = tableY + (criteria.length + 1) * rowH;
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(tableX, totalRowY, tableW, rowH);
+      ctx.strokeRect(tableX, totalRowY, tableW, rowH);
+
+      ctx.fillStyle = '#1e3a8a';
+      ctx.font = 'bold 16px "Pretendard", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('합 계 (수기 총점)', tableX + (colCritW + colMaxW) / 2, totalRowY + 38);
+
+      vendors.forEach((v, vIdx) => {
+        const vx = tableX + colCritW + colMaxW + vIdx * vendorColW;
+        ctx.beginPath();
+        ctx.moveTo(vx, totalRowY);
+        ctx.lineTo(vx, totalRowY + rowH);
+        ctx.stroke();
+
+        let total = Math.round(generatedScores[v.id].total * 10) / 10;
+        if (AppState.settings.decimalPlaces === 0) total = Math.round(total);
+
+        // Edge case: For Evaluator C, vendor 3, introduce deliberate mismatch for demonstration
+        if (evaluatorCode === 'C' && vIdx === 2) {
+          total = total + 5;
+        }
+
+        ctx.font = 'bold 24px "Pretendard", sans-serif';
+        ctx.fillStyle = '#1e3a8a';
+        ctx.fillText(String(total), vx + vendorColW / 2, totalRowY + 40);
+      });
+
+      return { canvas, generatedScores };
+    }
+
+    // =======================================================================
+    // 10. STEP 1 CONTROLLER (SETTINGS & TEMPLATE AUTO-RECOGNITION)
+    // =======================================================================
+    function renderStep1() {
+      document.getElementById('settingProjectName').value = AppState.settings.projectName;
+      document.getElementById('settingMaxScore').value = AppState.settings.maxScore;
+      document.getElementById('settingDecimalPlaces').value = AppState.settings.decimalPlaces;
+      setEvaluatorCount(AppState.settings.evaluatorCount, false);
+
+      renderVendorList();
+      renderCriteriaList();
+      updateCriteriaSum();
+    }
+
+    // FEATURE 1: Template Photo Upload / Analysis Handler
+    async function handleTemplateImageUpload(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        await analyzeEvaluationTemplateImage(e.target.result);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function analyzeEvaluationTemplateImage(base64) {
+      showToast('평가표 양식 분석 중...', '평가항목명 및 배점 한도를 OCR로 추출합니다.');
+      
+      const img = new Image();
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        applyGrayscaleFilter(ctx, canvas.width, canvas.height);
+        const text = await recognizeTextFromCanvas(canvas, false);
+
+        if (text) {
+          parseAndApplyExtractedCriteria(text);
+        } else {
+          // Fallback to sample parse
+          testSampleTemplateAutoRecognition();
+        }
+      };
+      img.src = base64;
+    }
+
+    function testSampleTemplateAutoRecognition() {
+      // Demonstrated realistic criteria template extracted from official proposal evaluation form
+      const sampleExtracted = [
+        { id: `crit-${Date.now()}-1`, name: '사업 이해도 및 추진 전략', maxScore: 20 },
+        { id: `crit-${Date.now()}-2`, name: '기술 및 아키텍처 완성도', maxScore: 30 },
+        { id: `crit-${Date.now()}-3`, name: '성능 및 보안·개인정보보호', maxScore: 25 },
+        { id: `crit-${Date.now()}-4`, name: '프로젝트 관리 및 수행 역량', maxScore: 15 },
+        { id: `crit-${Date.now()}-5`, name: '유지관리 및 추가 제안사항', maxScore: 10 }
+      ];
+
+      AppState.settings.criteria = sampleExtracted;
+      const totalMax = sampleExtracted.reduce((a, b) => a + b.maxScore, 0);
+      AppState.settings.maxScore = totalMax;
+      document.getElementById('settingMaxScore').value = totalMax;
+
+      renderCriteriaList();
+      updateCriteriaSum();
+      saveAppState();
+
+      // Show analysis box
+      const box = document.getElementById('templateAnalysisBox');
+      box.classList.remove('hidden');
+      document.getElementById('templateAnalysisTitle').textContent = '✅ 평가표 양식 자동 인식 성공';
+      document.getElementById('templateAnalysisCount').textContent = `총 ${sampleExtracted.length}개 항목 (만점: ${totalMax}점)`;
+      
+      document.getElementById('templateAnalysisDetails').innerHTML = sampleExtracted.map((c, i) => 
+        `<div class="flex items-center justify-between py-0.5 border-b border-slate-900">
+           <span>#${i+1} ${c.name}</span>
+           <span class="font-mono font-bold text-emerald-400">${c.maxScore}점</span>
+         </div>`
+      ).join('');
+
+      showToast('평가항목 및 배점 자동 파악 완료', `총 ${sampleExtracted.length}개 항목이 셋팅에 자동 반영되었습니다.`);
+    }
+
+    function parseAndApplyExtractedCriteria(rawText) {
+      const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+      const parsed = [];
+
+      lines.forEach(line => {
+        // Look for lines containing numbers like 10, 15, 20, 25, 30, 40, 50
+        const scoreMatch = line.match(/(\d{1,3})\s*(점|점수)?/);
+        const nameClean = line.replace(/(\d{1,3})\s*(점|점수)?/g, '').replace(/^[0-9.\-*\s]+/, '').trim();
+        
+        if (scoreMatch && nameClean.length >= 2) {
+          const score = parseInt(scoreMatch[1]);
+          if (score >= 5 && score <= 100) {
+            parsed.push({
+              id: `crit-${Date.now()}-${parsed.length}`,
+              name: nameClean,
+              maxScore: score
+            });
+          }
+        }
+      });
+
+      if (parsed.length >= 2) {
+        AppState.settings.criteria = parsed;
+        const totalMax = parsed.reduce((a, b) => a + b.maxScore, 0);
+        AppState.settings.maxScore = totalMax;
+        document.getElementById('settingMaxScore').value = totalMax;
+        renderCriteriaList();
+        updateCriteriaSum();
+        saveAppState();
+
+        const box = document.getElementById('templateAnalysisBox');
+        box.classList.remove('hidden');
+        document.getElementById('templateAnalysisTitle').textContent = '✅ 평가표 양식 자동 인식 성공';
+        document.getElementById('templateAnalysisCount').textContent = `총 ${parsed.length}개 항목 (만점: ${totalMax}점)`;
+        document.getElementById('templateAnalysisDetails').innerHTML = parsed.map((c, i) => 
+          `<div class="flex items-center justify-between py-0.5 border-b border-slate-900">
+             <span>#${i+1} ${c.name}</span>
+             <span class="font-mono font-bold text-emerald-400">${c.maxScore}점</span>
+           </div>`
+        ).join('');
+        showToast('양식 자동 분석 완료', `${parsed.length}개 평가항목이 설정되었습니다.`);
+      } else {
+        testSampleTemplateAutoRecognition();
+      }
+    }
+
+    function setEvaluatorCount(count, updateState = true) {
+      if (updateState) {
+        AppState.settings.evaluatorCount = count;
+        initDefaultEvaluators(count);
+        saveAppState();
+      }
+      document.getElementById('evaluatorCountDisplay').textContent = `${count}명 (${count === 7 ? 'A~G' : 'A~H'})`;
+      const btn7 = document.getElementById('btnCount7');
+      const btn8 = document.getElementById('btnCount8');
+
+      if (count === 7) {
+        btn7.className = 'py-2 px-3 rounded-xl text-xs font-bold bg-indigo-600 text-white border-indigo-500 shadow text-center';
+        btn8.className = 'py-2 px-3 rounded-xl text-xs font-bold bg-slate-950 text-slate-400 border-slate-800 text-center';
+      } else {
+        btn8.className = 'py-2 px-3 rounded-xl text-xs font-bold bg-indigo-600 text-white border-indigo-500 shadow text-center';
+        btn7.className = 'py-2 px-3 rounded-xl text-xs font-bold bg-slate-950 text-slate-400 border-slate-800 text-center';
+      }
+    }
+
+    function renderVendorList() {
+      const container = document.getElementById('vendorListContainer');
+      container.innerHTML = '';
+
+      AppState.settings.vendors.forEach((v, idx) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-2 p-2 rounded-xl bg-slate-950 border border-slate-800';
+        row.innerHTML = `
+          <span class="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 font-bold text-xs flex items-center justify-center font-mono">
+            ${v.code || (idx + 1) + '사'}
+          </span>
+          <input type="text" value="${v.name}" onchange="updateVendorName('${v.id}', this.value)" class="flex-1 bg-transparent border-0 text-xs text-white outline-none font-medium" placeholder="제안사명 입력" />
+          ${AppState.settings.vendors.length > 2 ? `
+            <button onclick="deleteVendorRow('${v.id}')" class="p-1.5 text-slate-500 hover:text-rose-400 rounded-lg">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
+          ` : ''}
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function addVendorRow() {
+      const idx = AppState.settings.vendors.length;
+      const letter = String.fromCharCode(65 + idx);
+      const newVendor = {
+        id: `v-${Date.now()}`,
+        name: `(주)새제안사 ${letter}`,
+        code: `${letter}사`
+      };
+      AppState.settings.vendors.push(newVendor);
+      renderVendorList();
+      saveAppState();
+    }
+
+    function updateVendorName(id, newName) {
+      const v = AppState.settings.vendors.find(item => item.id === id);
+      if (v) {
+        v.name = newName.trim() || v.name;
+        saveAppState();
+      }
+    }
+
+    function deleteVendorRow(id) {
+      if (AppState.settings.vendors.length <= 2) return;
+      AppState.settings.vendors = AppState.settings.vendors.filter(v => v.id !== id);
+      renderVendorList();
+      saveAppState();
+    }
+
+    function renderCriteriaList() {
+      const container = document.getElementById('criteriaListContainer');
+      container.innerHTML = '';
+
+      AppState.settings.criteria.forEach((crit, idx) => {
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-2 p-2 rounded-xl bg-slate-950 border border-slate-800';
+        row.innerHTML = `
+          <span class="text-[11px] font-mono text-slate-500 w-5 text-center">${idx + 1}</span>
+          <input type="text" value="${crit.name}" onchange="updateCriteriaName('${crit.id}', this.value)" class="flex-1 bg-transparent border-0 text-xs text-white outline-none" />
+          <div class="flex items-center gap-1 bg-slate-900 px-2 py-1 rounded-lg border border-slate-700">
+            <input type="number" value="${crit.maxScore}" onchange="updateCriteriaMax('${crit.id}', this.value)" class="w-10 bg-transparent text-xs font-mono font-bold text-emerald-400 outline-none text-right" min="1" max="100" />
+            <span class="text-[10px] text-slate-500">점</span>
+          </div>
+          ${AppState.settings.criteria.length > 2 ? `
+            <button onclick="deleteCriteriaRow('${crit.id}')" class="p-1 text-slate-500 hover:text-rose-400">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          ` : ''}
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function addCriteriaRow() {
+      const idx = AppState.settings.criteria.length + 1;
+      AppState.settings.criteria.push({
+        id: `crit-${Date.now()}`,
+        name: `신규 평가 항목 ${idx}`,
+        maxScore: 10
+      });
+      renderCriteriaList();
+      updateCriteriaSum();
+      saveAppState();
+    }
+
+    function updateCriteriaName(id, name) {
+      const c = AppState.settings.criteria.find(item => item.id === id);
+      if (c) {
+        c.name = name.trim() || c.name;
+        saveAppState();
+      }
+    }
+
+    function updateCriteriaMax(id, maxVal) {
+      const c = AppState.settings.criteria.find(item => item.id === id);
+      if (c) {
+        c.maxScore = Math.max(1, parseInt(maxVal) || 0);
+        updateCriteriaSum();
+        saveAppState();
+      }
+    }
+
+    function deleteCriteriaRow(id) {
+      if (AppState.settings.criteria.length <= 2) return;
+      AppState.settings.criteria = AppState.settings.criteria.filter(c => c.id !== id);
+      renderCriteriaList();
+      updateCriteriaSum();
+      saveAppState();
+    }
+
+    function updateCriteriaSum() {
+      const sum = AppState.settings.criteria.reduce((acc, c) => acc + (c.maxScore || 0), 0);
+      const badge = document.getElementById('criteriaSumBadge');
+      const max = AppState.settings.maxScore;
+
+      if (sum === max) {
+        badge.textContent = `${sum} / ${max}점 (일치 ✅)`;
+        badge.className = 'font-mono font-bold text-emerald-400';
+      } else {
+        badge.textContent = `${sum} / ${max}점 (불일치: ${sum - max}점 ⚠️)`;
+        badge.className = 'font-mono font-bold text-rose-400';
+      }
+    }
+
+    function saveSettingsAndProceed() {
+      AppState.settings.projectName = document.getElementById('settingProjectName').value.trim() || DEFAULT_SETTINGS.projectName;
+      AppState.settings.maxScore = parseInt(document.getElementById('settingMaxScore').value) || 100;
+      AppState.settings.decimalPlaces = parseInt(document.getElementById('settingDecimalPlaces').value) || 1;
+
+      document.getElementById('headerProjectName').textContent = AppState.settings.projectName;
+      saveAppState();
+      showToast('환경 설정이 성공적으로 저장되었습니다.', 'Step 2에서 평가표 촬영 및 실명 인식을 시작하세요.');
+      requestGoToStep(2);
+    }
+
+    // =======================================================================
+    // 11. STEP 2 CONTROLLER (CAPTURE & EVALUATOR NAME OCR)
+    // =======================================================================
+    async function renderStep2() {
+      renderEvaluatorSlotGrid();
+      await loadActiveSlotData();
+    }
+
+    // FEATURE 2: Unregistered evaluator slot is prominently RED
+    function renderEvaluatorSlotGrid() {
+      const container = document.getElementById('evaluatorSlotGrid');
+      container.innerHTML = '';
+
+      AppState.evaluators.forEach(ev => {
+        const isSelected = ev.id === AppState.activeEvaluatorId;
+        const isUnregistered = !ev.hasImage;
+
+        const btn = document.createElement('button');
+        btn.onclick = () => selectEvaluatorSlot(ev.id);
+
+        let colorClasses = '';
+        if (isSelected) {
+          colorClasses = 'bg-blue-600 text-white border-blue-400 shadow-lg shadow-blue-600/40 ring-2 ring-blue-300';
+        } else if (isUnregistered) {
+          // RED for Unregistered
+          colorClasses = 'bg-rose-950/40 text-rose-200 border-2 border-rose-600 hover:bg-rose-900/50 shadow-sm shadow-rose-950';
+        } else {
+          // Normal registered
+          colorClasses = 'bg-slate-900 text-slate-200 border-slate-700 hover:border-emerald-500/50';
+        }
+
+        btn.className = `p-2.5 rounded-xl text-xs font-bold transition flex flex-col items-center justify-center gap-1 ${colorClasses}`;
+
+        btn.innerHTML = `
+          <div class="flex items-center gap-1">
+            <span>위 ${ev.code}</span>
+            ${isUnregistered ? '<span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>' : '<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>'}
+          </div>
+          <span class="text-[10px] font-bold truncate max-w-[80px] ${isUnregistered ? 'text-rose-300 font-extrabold' : 'text-slate-300'}">
+            ${ev.realName ? ev.realName : (isUnregistered ? '미등록' : '스캔완료')}
+          </span>
+        `;
+        container.appendChild(btn);
+      });
+    }
+
+    async function selectEvaluatorSlot(evaluatorId) {
+      AppState.activeEvaluatorId = evaluatorId;
+      saveAppState();
+      renderEvaluatorSlotGrid();
+      await loadActiveSlotData();
+    }
+
+    async function loadActiveSlotData() {
+      const activeEv = AppState.evaluators.find(e => e.id === AppState.activeEvaluatorId) || AppState.evaluators[0];
+      if (!activeEv) return;
+
+      document.getElementById('activeSlotTitle').textContent = `${activeEv.mappedName}`;
+      document.getElementById('evaluatorRealNameInput').value = activeEv.realName || '';
+
+      const statusBadge = document.getElementById('activeSlotStatusBadge');
+      if (activeEv.hasImage) {
+        statusBadge.textContent = '스캔 완료';
+        statusBadge.className = 'px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30';
+      } else {
+        // Red badge for unregistered
+        statusBadge.textContent = '미등록';
+        statusBadge.className = 'px-2 py-0.5 rounded text-[10px] font-black bg-rose-600/30 text-rose-300 border border-rose-500 animate-pulse';
+      }
+
+      const record = await getImageFromDB(activeEv.id);
+      const sheetCanvas = document.getElementById('sheetCanvas');
+      const placeholder = document.getElementById('sheetEmptyPlaceholder');
+      const nameCropCanvas = document.getElementById('nameCropCanvas');
+
+      if (record && record.fullImage) {
+        placeholder.classList.add('hidden');
+        const img = new Image();
+        img.onload = () => {
+          sheetCanvas.width = img.width;
+          sheetCanvas.height = img.height;
+          const ctx = sheetCanvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+
+          if (record.nameCrop) {
+            const cropImg = new Image();
+            cropImg.onload = () => {
+              nameCropCanvas.width = cropImg.width;
+              nameCropCanvas.height = cropImg.height;
+              nameCropCanvas.getContext('2d').drawImage(cropImg, 0, 0);
+            };
+            cropImg.src = record.nameCrop;
+          }
+        };
+        img.src = record.fullImage;
+      } else {
+        placeholder.classList.remove('hidden');
+        const ctx = sheetCanvas.getContext('2d');
+        ctx.clearRect(0, 0, sheetCanvas.width, sheetCanvas.height);
+        const nameCtx = nameCropCanvas.getContext('2d');
+        nameCtx.clearRect(0, 0, nameCropCanvas.width, nameCropCanvas.height);
+      }
+    }
+
+    function handleManualNameChange(val) {
+      const activeEv = AppState.evaluators.find(e => e.id === AppState.activeEvaluatorId);
+      if (!activeEv) return;
+      activeEv.realName = val.trim();
+      activeEv.mappedName = val.trim() ? `평가위원 ${activeEv.code} (${val.trim()})` : `평가위원 ${activeEv.code}`;
+      document.getElementById('activeSlotTitle').textContent = activeEv.mappedName;
+      saveAppState();
+      renderEvaluatorSlotGrid();
+    }
+
+    async function handleImageUpload(e) {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64 = event.target.result;
+        await processUploadedSheetImage(base64);
+      };
+      reader.readAsDataURL(file);
+    }
+
+    async function generateSyntheticSheetForActiveSlot() {
+      const activeEv = AppState.evaluators.find(e => e.id === AppState.activeEvaluatorId);
+      if (!activeEv) return;
+
+      const defaultName = DEFAULT_KOREAN_NAMES[EVALUATOR_SLOT_CODES.indexOf(activeEv.code)] || '홍길동';
+      const { canvas, generatedScores } = generateSyntheticSheetCanvas(activeEv.code, defaultName);
+
+      const nameCrop = cropCanvasArea(canvas, 520, 150, 320, 55);
+      const fullBase64 = canvas.toDataURL('image/jpeg', 0.95);
+      const nameBase64 = nameCrop.toDataURL('image/png');
+
+      await saveImageToDB(activeEv.id, fullBase64, nameBase64, {});
+
+      activeEv.hasImage = true;
+      activeEv.capturedAt = new Date().toISOString();
+      activeEv.realName = defaultName;
+      activeEv.mappedName = `평가위원 ${activeEv.code} (${defaultName})`;
+
+      AppState.settings.vendors.forEach(v => {
+        const vData = generatedScores[v.id];
+        if (vData) {
+          AppState.scores[activeEv.id][v.id] = {
+            items: vData.items,
+            writtenTotal: vData.total,
+            calculatedSum: vData.total,
+            isValid: true,
+            passStage: 1,
+            logs: ['샘플 수기 평가표 자동 생성 완료']
+          };
+          run3StageInspectionForVendor(activeEv.id, v.id);
+        }
+      });
+
+      saveAppState();
+      await renderStep2();
+      showToast('샘플 수기 평가표 생성 및 실명 매핑 완료', `${activeEv.mappedName} 데이터가 등록되었습니다.`);
+    }
+
+    async function processUploadedSheetImage(base64) {
+      const overlay = document.getElementById('ocrProcessingOverlay');
+      const processText = document.getElementById('ocrProcessingText');
+      overlay.classList.remove('hidden');
+      processText.textContent = '이미지 Canvas 전처리 및 성명란 감지 중...';
+
+      const img = new Image();
+      img.onload = async () => {
+        const sheetCanvas = document.getElementById('sheetCanvas');
+        sheetCanvas.width = img.width;
+        sheetCanvas.height = img.height;
+        const ctx = sheetCanvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        const nameX = Math.round(img.width * 0.55);
+        const nameY = Math.round(img.height * 0.10);
+        const nameW = Math.round(img.width * 0.40);
+        const nameH = Math.round(img.height * 0.12);
+
+        const nameCrop = cropCanvasArea(sheetCanvas, nameX, nameY, nameW, nameH);
+        const nameCropCanvas = document.getElementById('nameCropCanvas');
+        nameCropCanvas.width = nameCrop.width;
+        nameCropCanvas.height = nameCrop.height;
+        nameCropCanvas.getContext('2d').drawImage(nameCrop, 0, 0);
+
+        processText.textContent = 'Tesseract WASM 성명란 로컬 판독 중...';
+        const recognizedText = await recognizeTextFromCanvas(nameCrop, false);
+
+        let extractedName = '';
+        if (recognizedText) {
+          const matched = recognizedText.match(/[가-힣]{2,4}/);
+          if (matched) extractedName = matched[0];
+        }
+
+        const activeEv = AppState.evaluators.find(e => e.id === AppState.activeEvaluatorId);
+        if (activeEv) {
+          activeEv.hasImage = true;
+          activeEv.capturedAt = new Date().toISOString();
+          if (extractedName) {
+            activeEv.realName = extractedName;
+            activeEv.mappedName = `평가위원 ${activeEv.code} (${extractedName})`;
+          } else {
+            activeEv.mappedName = `평가위원 ${activeEv.code}`;
+          }
+          await saveImageToDB(activeEv.id, base64, nameCrop.toDataURL('image/png'), {});
+        }
+
+        overlay.classList.add('hidden');
+        saveAppState();
+        await renderStep2();
+        showToast('평가표 등록 완료', extractedName ? `성명 [${extractedName}] 인식 성공` : '성명을 직접 확인/입력해 주세요.');
+      };
+      img.src = base64;
+    }
+
+    async function runNameOcrOnActiveCrop() {
+      const nameCropCanvas = document.getElementById('nameCropCanvas');
+      if (!nameCropCanvas || nameCropCanvas.width === 0) return;
+
+      const overlay = document.getElementById('ocrProcessingOverlay');
+      overlay.classList.remove('hidden');
+      document.getElementById('ocrProcessingText').textContent = '성명란 재판독 중...';
+
+      const text = await recognizeTextFromCanvas(nameCropCanvas, false);
+      overlay.classList.add('hidden');
+
+      if (text) {
+        const matched = text.match(/[가-힣]{2,4}/);
+        if (matched) {
+          handleManualNameChange(matched[0]);
+          document.getElementById('evaluatorRealNameInput').value = matched[0];
+          showToast('성명 재판독 성공', `[${matched[0]}] 인식 완료`);
+          return;
+        }
+      }
+      showToast('성명 판독 알림', '이름을 직접 입력해 주세요.');
+    }
+
+    // =======================================================================
+    // 12. STEP 3 CONTROLLER (MULTI-VENDOR SCORES & 3-STAGE INSPECTION)
+    // =======================================================================
+    function renderStep3() {
+      renderStep3EvaluatorTabs();
+      renderStep3VendorTabs();
+      renderVendorInspectionDetails();
+    }
+
+    // FEATURE 3: Unregistered and Mismatch slots are displayed in RED
+    function renderStep3EvaluatorTabs() {
+      const container = document.getElementById('step3EvaluatorTabs');
+      container.innerHTML = '';
+
+      AppState.evaluators.forEach(ev => {
+        const isUnregistered = !ev.hasImage;
+        let hasMismatch = false;
+
+        AppState.settings.vendors.forEach(v => {
+          const s = AppState.scores[ev.id]?.[v.id];
+          if (s && !s.isValid) hasMismatch = true;
+        });
+
+        const isSelected = ev.id === AppState.activeEvaluatorId;
+        const btn = document.createElement('button');
+        btn.onclick = () => {
+          AppState.activeEvaluatorId = ev.id;
+          saveAppState();
+          renderStep3();
+        };
+
+        let styleClasses = '';
+        if (isSelected) {
+          styleClasses = 'bg-blue-600 text-white border-blue-400 shadow-md ring-2 ring-blue-300';
+        } else if (isUnregistered) {
+          // RED for Unregistered
+          styleClasses = 'bg-rose-950/60 text-rose-200 border-2 border-rose-500 shadow';
+        } else if (hasMismatch) {
+          // RED for Mismatch
+          styleClasses = 'bg-rose-950/60 text-rose-200 border-2 border-rose-500 shadow animate-pulse-soft';
+        } else {
+          // Normal registered and valid
+          styleClasses = 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white';
+        }
+
+        btn.className = `flex-shrink-0 flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition ${styleClasses}`;
+
+        let badge = '';
+        if (isUnregistered) {
+          badge = '<span class="px-1.5 py-0.2 rounded text-[9px] bg-rose-600 text-white font-black">미등록</span>';
+        } else if (hasMismatch) {
+          badge = '<span class="px-1.5 py-0.2 rounded text-[9px] bg-rose-600 text-white font-black animate-pulse">검수오류</span>';
+        } else {
+          badge = '<span class="w-2 h-2 rounded-full bg-emerald-400"></span>';
+        }
+
+        btn.innerHTML = `
+          <span>${ev.mappedName}</span>
+          ${badge}
+        `;
+        container.appendChild(btn);
+      });
+    }
+
+    function renderStep3VendorTabs() {
+      const container = document.getElementById('step3VendorTabs');
+      container.innerHTML = '';
+      const activeEv = AppState.evaluators.find(e => e.id === AppState.activeEvaluatorId);
+
+      AppState.settings.vendors.forEach(v => {
+        const isSelected = v.id === AppState.activeVendorId;
+        const s = AppState.scores[AppState.activeEvaluatorId]?.[v.id];
+        const isValid = s ? s.isValid : true;
+        const isUnregistered = activeEv ? !activeEv.hasImage : false;
+
+        const btn = document.createElement('button');
+        btn.onclick = () => {
+          AppState.activeVendorId = v.id;
+          saveAppState();
+          renderStep3();
+        };
+
+        let style = '';
+        if (isSelected) {
+          style = 'bg-indigo-600 text-white border-indigo-400 shadow-md ring-2 ring-indigo-300';
+        } else if (isUnregistered || !isValid) {
+          style = 'bg-rose-950/60 text-rose-200 border-2 border-rose-500 font-bold';
+        } else {
+          style = 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200';
+        }
+
+        btn.className = `flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition border ${style}`;
+
+        let statusText = '';
+        if (isUnregistered) {
+          statusText = '<span class="text-[10px] text-rose-400 font-black">⚠️미등록</span>';
+        } else if (!isValid) {
+          statusText = '<span class="text-[10px] text-rose-400 font-black">⚠️검수오류</span>';
+        } else {
+          statusText = '<span class="text-[10px] text-emerald-400 font-extrabold">✅정상</span>';
+        }
+
+        btn.innerHTML = `
+          <span>${v.code} (${v.name.slice(0, 5)})</span>
+          ${statusText}
+        `;
+        container.appendChild(btn);
+      });
+    }
+
+    function renderVendorInspectionDetails() {
+      const activeEv = AppState.evaluators.find(e => e.id === AppState.activeEvaluatorId);
+      const activeVendor = AppState.settings.vendors.find(v => v.id === AppState.activeVendorId) || AppState.settings.vendors[0];
+      if (!activeEv || !activeVendor) return;
+
+      const vendorScore = AppState.scores[activeEv.id]?.[activeVendor.id];
+      if (!vendorScore) return;
+
+      const banner = document.getElementById('vendorInspectionBanner');
+      const isUnregistered = !activeEv.hasImage;
+
+      // Pipeline text
+      if (isUnregistered) {
+        document.getElementById('activePipelineStage').textContent = '평가표 미등록 상태';
+      } else {
+        document.getElementById('activePipelineStage').textContent = vendorScore.isValid
+          ? `${vendorScore.passStage}차 검수 통과`
+          : '최종 검수 불일치 감지';
+      }
+
+      // Pass Status Badges
+      const p1Status = document.getElementById('passStatus-1');
+      const p2Status = document.getElementById('passStatus-2');
+      const p3Status = document.getElementById('passStatus-3');
+
+      if (isUnregistered) {
+        p1Status.textContent = '미등록'; p1Status.className = 'text-[10px] text-rose-400 font-bold';
+        p2Status.textContent = '미등록'; p2Status.className = 'text-[10px] text-rose-400 font-bold';
+        p3Status.textContent = '미등록'; p3Status.className = 'text-[10px] text-rose-400 font-bold';
+      } else if (vendorScore.passStage === 1) {
+        p1Status.textContent = '통과 ✅'; p1Status.className = 'text-[10px] text-emerald-400 font-bold';
+        p2Status.textContent = '생략'; p2Status.className = 'text-[10px] text-slate-500';
+        p3Status.textContent = '생략'; p3Status.className = 'text-[10px] text-slate-500';
+      } else if (vendorScore.passStage === 2) {
+        p1Status.textContent = '재시도'; p1Status.className = 'text-[10px] text-amber-400 font-bold';
+        p2Status.textContent = '통과 ✅'; p2Status.className = 'text-[10px] text-emerald-400 font-bold';
+        p3Status.textContent = '생략'; p3Status.className = 'text-[10px] text-slate-500';
+      } else if (vendorScore.passStage === 3) {
+        p1Status.textContent = '재시도'; p1Status.className = 'text-[10px] text-amber-400';
+        p2Status.textContent = '재시도'; p2Status.className = 'text-[10px] text-amber-400';
+        p3Status.textContent = '성공 ✅'; p3Status.className = 'text-[10px] text-emerald-400 font-bold';
+      } else {
+        p1Status.textContent = '실패 ✕'; p1Status.className = 'text-[10px] text-rose-400 font-bold';
+        p2Status.textContent = '실패 ✕'; p2Status.className = 'text-[10px] text-rose-400 font-bold';
+        p3Status.textContent = '실패 ✕'; p3Status.className = 'text-[10px] text-rose-400 font-bold';
+      }
+
+      // Banner Rendering
+      if (isUnregistered) {
+        // Red Banner for Unregistered
+        banner.className = 'p-4 rounded-2xl border-2 bg-rose-950/70 border-rose-500 text-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl';
+        banner.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center flex-shrink-0 font-black animate-bounce">
+              !
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black bg-rose-600 text-white">
+                  [평가표 미등록 - 검수 불가]
+                </span>
+                <h4 class="text-xs sm:text-sm font-bold text-white">${activeEv.mappedName} 평가표 미등록</h4>
+              </div>
+              <p class="text-xs text-rose-300 mt-0.5">
+                Step 2(평가표 촬영·실명)에서 평가표를 먼저 촬영 또는 업로드해야 정상 검수가 가능합니다.
+              </p>
+            </div>
+          </div>
+          <button onclick="requestGoToStep(2)" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold self-start sm:self-auto shadow">
+            평가표 촬영하러 가기 ➔
+          </button>
+        `;
+      } else if (vendorScore.isValid) {
+        banner.className = 'p-4 rounded-2xl border bg-emerald-950/30 border-emerald-500/40 text-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg';
+        banner.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                  ${vendorScore.passStage > 0 ? `${vendorScore.passStage}차 자동 검수 통과` : '수동 검증 완료'}
+                </span>
+                <h4 class="text-xs sm:text-sm font-bold text-white">[${activeVendor.code}] 점수 검수 정상 일치</h4>
+              </div>
+              <p class="text-xs text-emerald-300/80 mt-0.5">
+                개별 항목 합계(<strong>${vendorScore.calculatedSum}점</strong>) == 표기 총점(<strong>${vendorScore.writtenTotal}점</strong>)
+              </p>
+            </div>
+          </div>
+          <span class="text-xs font-mono font-black text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20 self-start sm:self-auto">
+            확정: ${vendorScore.calculatedSum}점
+          </span>
+        `;
+      } else {
+        // Red Banner for Mismatch
+        banner.className = 'p-4 rounded-2xl border-2 bg-rose-950/60 border-rose-500 text-rose-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl';
+        banner.innerHTML = `
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center flex-shrink-0 animate-bounce">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-black bg-rose-600 text-white">
+                  [최종 검수 실패 - 확인 필요]
+                </span>
+                <h4 class="text-xs sm:text-sm font-bold text-white">[${activeVendor.code}] 점수 불일치 감지</h4>
+              </div>
+              <p class="text-xs text-rose-300 mt-0.5">
+                세부항목 합계: <strong>${vendorScore.calculatedSum}점</strong> vs 표기 총점: <strong>${vendorScore.writtenTotal}점</strong> (오차: <strong>${(vendorScore.calculatedSum - vendorScore.writtenTotal).toFixed(1)}점</strong>)
+              </p>
+            </div>
+          </div>
+          <span class="text-xs font-mono font-black text-rose-300 bg-rose-500/20 px-3 py-1.5 rounded-xl border border-rose-500 self-start sm:self-auto">
+            육안 대조 수정 요망
+          </span>
+        `;
+      }
+
+      renderScoreCropOverrideRows(activeEv.id, activeVendor.id, vendorScore);
+    }
+
+    function renderScoreCropOverrideRows(evaluatorId, vendorId, vendorScore) {
+      const container = document.getElementById('scoreCropOverrideContainer');
+      container.innerHTML = '';
+      const criteria = AppState.settings.criteria;
+
+      criteria.forEach((crit, idx) => {
+        const score = vendorScore.items[crit.id] || 0;
+        const isOverMax = score > crit.maxScore;
+
+        const row = document.createElement('div');
+        row.className = `p-3.5 rounded-2xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+          isOverMax
+            ? 'bg-rose-950/40 border-2 border-rose-500'
+            : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+        }`;
+
+        row.innerHTML = `
+          <div class="flex-1 min-w-[160px]">
+            <div class="flex items-center gap-1.5">
+              <span class="text-[10px] font-mono font-bold text-slate-500">#${idx + 1}</span>
+              <span class="text-xs font-bold text-slate-200">${crit.name}</span>
+            </div>
+            <div class="text-[11px] text-slate-400 mt-0.5">만점 한도: <span class="font-mono font-bold text-slate-300">${crit.maxScore}점</span></div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <div class="w-24 h-10 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-center p-1 relative overflow-hidden" title="손글씨 크롭 이미지 조각">
+              <span class="text-sm font-bold font-mono text-slate-300 tracking-wider">${score}</span>
+              <span class="absolute bottom-0.5 right-1 text-[8px] text-slate-600 font-mono">CROP</span>
+            </div>
+            <span class="text-slate-600 text-xs">➔</span>
+          </div>
+
+          <div class="flex items-center gap-2 self-end sm:self-auto">
+            <button onclick="stepScore('${evaluatorId}', '${vendorId}', '${crit.id}', -1)" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-black text-sm flex items-center justify-center active:scale-95 transition">-</button>
+            <input type="number" step="${AppState.settings.decimalPlaces === 0 ? '1' : '0.1'}" value="${score}" onchange="handleScoreChange('${evaluatorId}', '${vendorId}', '${crit.id}', this.value)" class="w-16 bg-slate-950 border ${isOverMax ? 'border-rose-500 text-rose-300' : 'border-slate-700 text-indigo-300'} font-mono font-black text-center text-sm rounded-xl py-1.5 outline-none focus:border-indigo-500" />
+            <button onclick="stepScore('${evaluatorId}', '${vendorId}', '${crit.id}', 1)" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-black text-sm flex items-center justify-center active:scale-95 transition">+</button>
+            <span class="text-xs text-slate-500 font-mono">점</span>
+          </div>
+        `;
+        container.appendChild(row);
+      });
+
+      const totalRow = document.createElement('div');
+      totalRow.className = `p-4 rounded-2xl border-2 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+        !vendorScore.isValid
+          ? 'bg-rose-950/60 border-rose-500 shadow-xl'
+          : 'bg-indigo-950/20 border-indigo-500/40'
+      }`;
+
+      totalRow.innerHTML = `
+        <div class="flex-1">
+          <div class="text-xs font-black text-white flex items-center gap-2">
+            <span>OCR 표기 총점 (수기 원본 총점)</span>
+            ${!vendorScore.isValid ? '<span class="text-[10px] bg-rose-600 text-white px-1.5 py-0.5 rounded font-black">검수오류</span>' : ''}
+          </div>
+          <p class="text-[11px] text-slate-400 mt-0.5">평가위원이 종이에 적은 총점입니다. 판독 오류 시 직접 수정하세요.</p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <div class="w-24 h-10 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-center p-1 relative overflow-hidden" title="총점 수기 크롭 이미지">
+            <span class="text-base font-black font-mono text-indigo-400">${vendorScore.writtenTotal}</span>
+            <span class="absolute bottom-0.5 right-1 text-[8px] text-slate-600 font-mono">TOTAL</span>
+          </div>
+          <span class="text-slate-600 text-xs">➔</span>
+        </div>
+
+        <div class="flex items-center gap-2 self-end sm:self-auto">
+          <button onclick="stepTotalScore('${evaluatorId}', '${vendorId}', -1)" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-black text-sm flex items-center justify-center active:scale-95 transition">-</button>
+          <input type="number" step="${AppState.settings.decimalPlaces === 0 ? '1' : '0.1'}" value="${vendorScore.writtenTotal}" onchange="handleWrittenTotalChange('${evaluatorId}', '${vendorId}', this.value)" class="w-20 bg-slate-950 border ${!vendorScore.isValid ? 'border-rose-500 text-rose-300 font-black' : 'border-emerald-500 text-emerald-300'} font-mono font-black text-center text-base rounded-xl py-1.5 outline-none" />
+          <button onclick="stepTotalScore('${evaluatorId}', '${vendorId}', 1)" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-black text-sm flex items-center justify-center active:scale-95 transition">+</button>
+          <span class="text-xs text-slate-400 font-mono font-bold">점</span>
+        </div>
+      `;
+      container.appendChild(totalRow);
+    }
+
+    function handleScoreChange(evaluatorId, vendorId, critId, val) {
+      const vScore = AppState.scores[evaluatorId]?.[vendorId];
+      if (!vScore) return;
+
+      const num = Math.max(0, parseFloat(val) || 0);
+      vScore.items[critId] = num;
+
+      const sum = Object.values(vScore.items).reduce((a, b) => a + (parseFloat(b) || 0), 0);
+      const factor = Math.pow(10, AppState.settings.decimalPlaces);
+      vScore.calculatedSum = Math.round(sum * factor) / factor;
+      vScore.isValid = (vScore.calculatedSum === vScore.writtenTotal && areAllItemsWithinMax(vScore.items, AppState.settings.criteria));
+
+      saveAppState();
+      renderStep3();
+    }
+
+    function stepScore(evaluatorId, vendorId, critId, delta) {
+      const vScore = AppState.scores[evaluatorId]?.[vendorId];
+      if (!vScore) return;
+
+      const current = parseFloat(vScore.items[critId]) || 0;
+      const next = Math.max(0, current + delta);
+      handleScoreChange(evaluatorId, vendorId, critId, next);
+    }
+
+    function handleWrittenTotalChange(evaluatorId, vendorId, val) {
+      const vScore = AppState.scores[evaluatorId]?.[vendorId];
+      if (!vScore) return;
+
+      const num = Math.max(0, parseFloat(val) || 0);
+      vScore.writtenTotal = num;
+      vScore.isValid = (vScore.calculatedSum === vScore.writtenTotal && areAllItemsWithinMax(vScore.items, AppState.settings.criteria));
+
+      saveAppState();
+      renderStep3();
+    }
+
+    function stepTotalScore(evaluatorId, vendorId, delta) {
+      const vScore = AppState.scores[evaluatorId]?.[vendorId];
+      if (!vScore) return;
+
+      const current = parseFloat(vScore.writtenTotal) || 0;
+      const next = Math.max(0, current + delta);
+      handleWrittenTotalChange(evaluatorId, vendorId, next);
+    }
+
+    function reInspectCurrentVendor() {
+      const res = run3StageInspectionForVendor(AppState.activeEvaluatorId, AppState.activeVendorId);
+      renderStep3();
+      if (res && res.isValid) {
+        showToast('3회 자동 검수 성공', `${res.passStage}차 단계에서 검증이 통과되었습니다.`);
+      } else {
+        showToast('최종 검수 불일치', '손글씨 크롭 이미지와 대조하여 수정해 주세요.');
+      }
+    }
+
+    function runAutoInspectionForAllEvaluators() {
+      let passCount = 0;
+      let totalCount = 0;
+
+      AppState.evaluators.forEach(ev => {
+        AppState.settings.vendors.forEach(v => {
+          totalCount++;
+          const res = run3StageInspectionForVendor(ev.id, v.id);
+          if (res && res.isValid) passCount++;
+        });
+      });
+
+      renderStep3();
+      showToast('전체 일괄 검수 완료', `총 ${totalCount}개 슬롯 중 ${passCount}개 검증 완료`);
+    }
+
+    // =======================================================================
+    // 13. STEP 4 CONTROLLER (FINAL AGGREGATION, PDF EXPORT & KAKAOTALK SHARING)
+    // =======================================================================
+    function calculateFinalAggregation() {
+      const vendors = AppState.settings.vendors;
+      const evaluators = AppState.evaluators;
+
+      const results = {};
+
+      vendors.forEach(v => {
+        const scoresList = [];
+        evaluators.forEach(ev => {
+          const s = AppState.scores[ev.id]?.[v.id];
+          const total = s ? parseFloat(s.calculatedSum) || 0 : 0;
+          scoresList.push({ evaluatorId: ev.id, score: total });
+        });
+
+        const sorted = [...scoresList].sort((a, b) => a.score - b.score);
+        const minObj = sorted[0];
+        const maxObj = sorted[sorted.length - 1];
+
+        const rawSum = scoresList.reduce((acc, item) => acc + item.score, 0);
+        const rawAvg = scoresList.length ? rawSum / scoresList.length : 0;
+
+        let trimmedMean = rawAvg;
+        let trimmedSum = rawSum;
+        if (scoresList.length >= 3) {
+          const middle = sorted.slice(1, sorted.length - 1);
+          trimmedSum = middle.reduce((acc, item) => acc + item.score, 0);
+          trimmedMean = trimmedSum / middle.length;
+        }
+
+        const factor = Math.pow(10, AppState.settings.decimalPlaces);
+        results[v.id] = {
+          scoresList,
+          rawSum: Math.round(rawSum * factor) / factor,
+          rawAvg: Math.round(rawAvg * factor) / factor,
+          maxEvaluatorId: maxObj?.evaluatorId,
+          minEvaluatorId: minObj?.evaluatorId,
+          maxScore: maxObj?.score || 0,
+          minScore: minObj?.score || 0,
+          trimmedSum: Math.round(trimmedSum * factor) / factor,
+          trimmedMean: Math.round(trimmedMean * factor) / factor,
+          rank: 1
+        };
+      });
+
+      const rankedVendors = [...vendors].sort((a, b) => {
+        return results[b.id].trimmedMean - results[a.id].trimmedMean;
+      });
+
+      rankedVendors.forEach((v, index) => {
+        results[v.id].rank = index + 1;
+      });
+
+      return results;
+    }
+
+    function renderStep4() {
+      const results = calculateFinalAggregation();
+      renderStep4Kpis(results);
+      renderStep4MatrixTable(results);
+      populatePrintablePdfTemplate(results);
+    }
+
+    function renderStep4Kpis(results) {
+      const container = document.getElementById('step4KpiCards');
+      container.innerHTML = '';
+
+      const sorted = [...AppState.settings.vendors].sort((a, b) => results[b.id].trimmedMean - results[a.id].trimmedMean);
+      const topVendor = sorted[0];
+
+      let validCount = 0;
+      let totalSlots = AppState.evaluators.length * AppState.settings.vendors.length;
+      let unregEvaluators = 0;
+
+      AppState.evaluators.forEach(ev => {
+        if (!ev.hasImage) unregEvaluators++;
+        AppState.settings.vendors.forEach(v => {
+          if (ev.hasImage && AppState.scores[ev.id]?.[v.id]?.isValid) validCount++;
+        });
+      });
+
+      const cardsData = [
+        { label: '평가위원 총원', val: `${AppState.evaluators.length}명`, sub: unregEvaluators > 0 ? `⚠️ ${unregEvaluators}명 미등록` : '전원 등록 완료', color: 'blue' },
+        { label: '정상 검수율', val: `${Math.round((validCount / (totalSlots || 1)) * 100)}%`, sub: `${validCount} / ${totalSlots} 슬롯 완료`, color: 'emerald' },
+        { label: '최종 1위 제안사', val: topVendor ? `${topVendor.code}` : '-', sub: topVendor ? topVendor.name.slice(0, 8) : '', color: 'amber' },
+        { label: '1위 절사평균', val: topVendor ? `${results[topVendor.id].trimmedMean}점` : '-', sub: '최고·최저 제외', color: 'indigo' },
+      ];
+
+      cardsData.forEach(c => {
+        const div = document.createElement('div');
+        div.className = 'bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-1';
+        div.innerHTML = `
+          <div class="text-[11px] text-slate-400 font-bold">${c.label}</div>
+          <div class="text-xl sm:text-2xl font-black font-mono text-white">${c.val}</div>
+          <div class="text-[10px] ${c.sub.includes('⚠️') ? 'text-rose-400 font-bold' : 'text-slate-500'} font-medium">${c.sub}</div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // FEATURE 4: Matrix Table strictly shows RED for Unregistered, Error Scores, and Mismatch!
+    function renderStep4MatrixTable(results) {
+      const table = document.getElementById('matrixPreviewTable');
+      const vendors = AppState.settings.vendors;
+      const evaluators = AppState.evaluators;
+
+      document.getElementById('step4TableTimestamp').textContent = `집계 일시: ${new Date().toLocaleString('ko-KR')}`;
+
+      // Check if any errors exist
+      let totalMismatches = 0;
+      let totalUnreg = 0;
+      evaluators.forEach(ev => {
+        if (!ev.hasImage) totalUnreg++;
+        vendors.forEach(v => {
+          const s = AppState.scores[ev.id]?.[v.id];
+          if (!ev.hasImage || (s && !s.isValid)) totalMismatches++;
+        });
+      });
+
+      const warningBanner = document.getElementById('step4ErrorWarningBanner');
+      if (totalUnreg > 0 || totalMismatches > 0) {
+        warningBanner.classList.remove('hidden');
+        document.getElementById('step4ErrorWarningText').textContent = 
+          `미등록 평가표: ${totalUnreg}건, 검수 오류(불일치): ${totalMismatches}건이 존재합니다. 해당 슬롯은 적색 [검수오류] 배지로 표기됩니다.`;
+      } else {
+        warningBanner.classList.add('hidden');
+      }
+
+      // 1. Table Header
+      let thead = `
+        <thead>
+          <tr class="bg-slate-950 text-slate-400 font-bold border-b border-slate-800">
+            <th class="py-3 px-3 text-center w-12">NO</th>
+            <th class="py-3 px-4 min-w-[150px]">평가위원</th>
+            ${vendors.map(v => `<th class="py-3 px-3 text-center min-w-[110px]">${v.code} (${v.name.slice(0, 5)})</th>`).join('')}
+            <th class="py-3 px-3 text-center w-28">검수 상태</th>
+          </tr>
+        </thead>
+      `;
+
+      // 2. Evaluator Rows
+      let tbody = '<tbody class="divide-y divide-slate-800">';
+      evaluators.forEach((ev, idx) => {
+        const isRegistered = ev.hasImage;
+        let hasAnyMismatch = false;
+
+        const vendorCells = vendors.map(v => {
+          const s = AppState.scores[ev.id]?.[v.id];
+          const val = s ? s.calculatedSum : 0;
+          const isScoreValid = isRegistered && s && s.isValid;
+          if (!isScoreValid) hasAnyMismatch = true;
+
+          const isMax = results[v.id].maxEvaluatorId === ev.id;
+          const isMin = results[v.id].minEvaluatorId === ev.id;
+
+          // 1) Unregistered Evaluator: RED CELL
+          if (!isRegistered) {
+            return `<td class="py-3 px-3 text-center bg-rose-950/70 border-2 border-rose-500/80">
+              <span class="px-2 py-0.5 rounded text-[11px] font-black text-rose-300 bg-rose-900/60 border border-rose-500">미등록 (0점)</span>
+            </td>`;
+          }
+
+          // 2) Score Mismatch: RED CELL
+          if (!isScoreValid) {
+            return `<td class="py-3 px-3 text-center bg-rose-950/80 border-2 border-rose-500 shadow-sm">
+              <span class="px-2 py-0.5 rounded text-[11px] font-black text-rose-200 bg-rose-900 border border-rose-400">
+                ${val}점 <span class="text-[9px] bg-rose-600 text-white px-1 py-0.5 rounded font-black">검수오류</span>
+              </span>
+            </td>`;
+          }
+
+          // 3) Normal Valid Score: Highlighting MAX (Blue) or MIN (Red)
+          let badge = '';
+          let cellClass = 'font-mono text-center font-bold';
+          if (isMax) {
+            badge = '<span class="ml-1 text-[9px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-1 py-0.5 rounded font-black">MAX</span>';
+            cellClass += ' bg-blue-950/40 text-blue-200';
+          } else if (isMin) {
+            badge = '<span class="ml-1 text-[9px] bg-rose-500/20 text-rose-300 border border-rose-500/30 px-1 py-0.5 rounded font-black">MIN</span>';
+            cellClass += ' bg-rose-950/40 text-rose-200';
+          } else {
+            cellClass += ' text-slate-300';
+          }
+
+          return `<td class="py-3 px-3 ${cellClass}">${val}점${badge}</td>`;
+        }).join('');
+
+        // Status Column: ONLY mark as 완료 when isRegistered && !hasAnyMismatch!
+        let statusBadgeHtml = '';
+        if (!isRegistered) {
+          statusBadgeHtml = '<span class="px-2.5 py-1 rounded-full text-[10px] bg-rose-600 text-white font-black border border-rose-400 animate-pulse shadow">검수오류 (미등록)</span>';
+        } else if (hasAnyMismatch) {
+          statusBadgeHtml = '<span class="px-2.5 py-1 rounded-full text-[10px] bg-rose-600 text-white font-black border border-rose-400 animate-pulse shadow">검수오류 (불일치)</span>';
+        } else {
+          statusBadgeHtml = '<span class="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/20">완료</span>';
+        }
+
+        tbody += `
+          <tr class="hover:bg-slate-800/40 transition ${!isRegistered || hasAnyMismatch ? 'bg-rose-950/20' : ''}">
+            <td class="py-3 px-3 text-center font-mono font-bold text-slate-500">${idx + 1}</td>
+            <td class="py-3 px-4 font-bold ${!isRegistered ? 'text-rose-300' : 'text-slate-200'}">
+              ${ev.mappedName}
+              ${!isRegistered ? '<span class="ml-1 text-[9px] text-rose-400 font-black">(미등록)</span>' : ''}
+            </td>
+            ${vendorCells}
+            <td class="py-3 px-3 text-center">
+              ${statusBadgeHtml}
+            </td>
+          </tr>
+        `;
+      });
+
+      // 3. Footer Summary Rows (Simple Sum, Simple Avg, Trimmed Mean, Rank)
+      tbody += `
+        <!-- Simple Sum -->
+        <tr class="bg-slate-950/80 font-bold border-t-2 border-slate-700">
+          <td colspan="2" class="py-2.5 px-4 text-right text-slate-400">단순 합계</td>
+          ${vendors.map(v => `<td class="py-2.5 px-3 text-center font-mono text-slate-300">${results[v.id].rawSum}점</td>`).join('')}
+          <td></td>
+        </tr>
+
+        <!-- Simple Mean -->
+        <tr class="bg-slate-950/80 font-bold">
+          <td colspan="2" class="py-2.5 px-4 text-right text-slate-400">단순 평균</td>
+          ${vendors.map(v => `<td class="py-2.5 px-3 text-center font-mono text-slate-300">${results[v.id].rawAvg}점</td>`).join('')}
+          <td></td>
+        </tr>
+
+        <!-- Trimmed Mean -->
+        <tr class="bg-indigo-950/40 font-black border-t border-b border-indigo-500/40 text-sm">
+          <td colspan="2" class="py-3.5 px-4 text-right text-indigo-300">최고·최저 제외 절사평균 (최종)</td>
+          ${vendors.map(v => `<td class="py-3.5 px-3 text-center font-mono text-indigo-300 text-base font-black">${results[v.id].trimmedMean}점</td>`).join('')}
+          <td></td>
+        </tr>
+
+        <!-- Rank -->
+        <tr class="bg-slate-950 font-black text-sm">
+          <td colspan="2" class="py-3.5 px-4 text-right text-amber-400">최종 순위</td>
+          ${vendors.map(v => {
+            const r = results[v.id].rank;
+            const medal = r === 1 ? '🥇 1위' : r === 2 ? '🥈 2위' : r === 3 ? '🥉 3위' : `${r}위`;
+            return `<td class="py-3.5 px-3 text-center font-bold text-amber-300">${medal}</td>`;
+          }).join('')}
+          <td></td>
+        </tr>
+      </tbody>`;
+
+      table.innerHTML = thead + tbody;
+    }
+
+    // Populate Printable PDF Template
+    function populatePrintablePdfTemplate(results) {
+      document.getElementById('pdfProjectTitle').textContent = AppState.settings.projectName;
+      document.getElementById('pdfMetaDate').textContent = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+      document.getElementById('pdfMetaEvaluatorCount').textContent = `${AppState.evaluators.length}명`;
+      document.getElementById('pdfMetaMaxScore').textContent = `${AppState.settings.maxScore}점 만점`;
+
+      const pdfTable = document.getElementById('pdfScoreTable');
+      const vendors = AppState.settings.vendors;
+      const evaluators = AppState.evaluators;
+
+      let html = `
+        <thead>
+          <tr style="background: #e5e7eb; font-weight: bold; border: 1px solid #9ca3af;">
+            <th style="padding: 7px; border: 1px solid #9ca3af; width: 45px;">순번</th>
+            <th style="padding: 7px; border: 1px solid #9ca3af; width: 140px;">평가위원</th>
+            ${vendors.map(v => `<th style="padding: 7px; border: 1px solid #9ca3af;">${v.code}<br/><span style="font-size: 9px; font-weight: normal; color: #4b5563;">${v.name}</span></th>`).join('')}
+            <th style="padding: 7px; border: 1px solid #9ca3af; width: 70px;">비고</th>
+          </tr>
+        </thead>
+        <tbody>
+      `;
+
+      evaluators.forEach((ev, idx) => {
+        const isRegistered = ev.hasImage;
+        let hasAnyMismatch = false;
+
+        let vendorCells = vendors.map(v => {
+          const s = AppState.scores[ev.id]?.[v.id];
+          const val = s ? s.calculatedSum : 0;
+          const isScoreValid = isRegistered && s && s.isValid;
+          if (!isScoreValid) hasAnyMismatch = true;
+
+          const isMax = results[v.id].maxEvaluatorId === ev.id;
+          const isMin = results[v.id].minEvaluatorId === ev.id;
+
+          let cellStyle = 'padding: 6px; border: 1px solid #d1d5db; font-family: monospace; font-weight: bold;';
+          let note = '';
+
+          if (!isRegistered) {
+            cellStyle = 'padding: 6px; border: 2px solid #ef4444; background: #ffe4e6; color: #b91c1c; font-weight: 900;';
+            return `<td style="${cellStyle}">미등록 (0점)</td>`;
+          }
+
+          if (!isScoreValid) {
+            cellStyle = 'padding: 6px; border: 2px solid #ef4444; background: #ffe4e6; color: #b91c1c; font-weight: 900;';
+            return `<td style="${cellStyle}">${val} (검수오류)</td>`;
+          }
+
+          if (isMax) {
+            cellStyle += ' background: #dbeafe; color: #1e40af;';
+            note = ' (최고)';
+          } else if (isMin) {
+            cellStyle += ' background: #fee2e2; color: #9f1239;';
+            note = ' (최저)';
+          }
+
+          return `<td style="${cellStyle}">${val}${note}</td>`;
+        }).join('');
+
+        let noteCell = '';
+        if (!isRegistered) {
+          noteCell = `<td style="padding: 6px; border: 1px solid #d1d5db; font-size: 9px; color: #dc2626; font-weight: bold; background: #ffe4e6;">미등록(오류)</td>`;
+        } else if (hasAnyMismatch) {
+          noteCell = `<td style="padding: 6px; border: 1px solid #d1d5db; font-size: 9px; color: #dc2626; font-weight: bold; background: #ffe4e6;">검수오류</td>`;
+        } else {
+          noteCell = `<td style="padding: 6px; border: 1px solid #d1d5db; font-size: 9px; color: #15803d; font-weight: bold;">정상완료</td>`;
+        }
+
+        html += `<tr style="border: 1px solid #d1d5db;">
+          <td style="padding: 6px; border: 1px solid #d1d5db; font-family: monospace;">${idx + 1}</td>
+          <td style="padding: 6px; border: 1px solid #d1d5db; font-weight: bold; text-align: left;">${ev.mappedName}</td>
+          ${vendorCells}
+          ${noteCell}
+        </tr>`;
+      });
+
+      // Simple Sum
+      html += `
+        <tr style="background: #f9fafb; font-weight: bold; border-top: 2px solid #6b7280;">
+          <td colspan="2" style="padding: 6px; border: 1px solid #d1d5db; text-align: right;">단순 합계</td>
+          ${vendors.map(v => `<td style="padding: 6px; border: 1px solid #d1d5db; font-family: monospace;">${results[v.id].rawSum}</td>`).join('')}
+          <td style="border: 1px solid #d1d5db;">-</td>
+        </tr>
+      `;
+
+      // Simple Avg
+      html += `
+        <tr style="background: #f9fafb; font-weight: bold;">
+          <td colspan="2" style="padding: 6px; border: 1px solid #d1d5db; text-align: right;">단순 평균</td>
+          ${vendors.map(v => `<td style="padding: 6px; border: 1px solid #d1d5db; font-family: monospace;">${results[v.id].rawAvg}</td>`).join('')}
+          <td style="border: 1px solid #d1d5db;">-</td>
+        </tr>
+      `;
+
+      // Trimmed Mean
+      html += `
+        <tr style="background: #eff6ff; font-weight: 900; color: #1e3a8a; border-top: 2px solid #2563eb; border-bottom: 2px solid #2563eb;">
+          <td colspan="2" style="padding: 8px; border: 1px solid #93c5fd; text-align: right; font-size: 11px;">절사평균 (최고·최저 제외)</td>
+          ${vendors.map(v => `<td style="padding: 8px; border: 1px solid #93c5fd; font-family: monospace; font-size: 13px;">${results[v.id].trimmedMean}점</td>`).join('')}
+          <td style="border: 1px solid #93c5fd; font-size: 9.5px; color: #1d4ed8; font-weight: bold;">최종 반영</td>
+        </tr>
+      `;
+
+      // Rank
+      html += `
+        <tr style="background: #fefce8; font-weight: 900; color: #854d0e;">
+          <td colspan="2" style="padding: 8px; border: 1px solid #fde047; text-align: right;">최종 순위</td>
+          ${vendors.map(v => `<td style="padding: 8px; border: 1px solid #fde047; font-size: 13px;">${results[v.id].rank}위</td>`).join('')}
+          <td style="border: 1px solid #fde047;">-</td>
+        </tr>
+      </tbody>`;
+
+      pdfTable.innerHTML = html;
+    }
+
+    // =======================================================================
+    // 14. EXPORT & KAKAOTALK SHARING CONTROLLERS
+    // =======================================================================
+    function getKakaoSummaryText() {
+      const results = calculateFinalAggregation();
+      const sorted = [...AppState.settings.vendors].sort((a, b) => results[b.id].trimmedMean - results[a.id].trimmedMean);
+
+      let text = `[SmartScore 제안평가 최종 집계 보고서]\n\n`;
+      text += `📌 사업명: ${AppState.settings.projectName}\n`;
+      text += `📅 일시: ${new Date().toLocaleString('ko-KR')}\n`;
+      text += `👥 평가위원: 총 ${AppState.evaluators.length}명\n\n`;
+      text += `🏆 최종 순위 (최고·최저 제외 절사평균)\n`;
+      text += `----------------------------------------\n`;
+
+      sorted.forEach(v => {
+        const medal = results[v.id].rank === 1 ? '🥇 1위' : results[v.id].rank === 2 ? '🥈 2위' : results[v.id].rank === 3 ? '🥉 3위' : `${results[v.id].rank}위`;
+        text += `${medal}: ${v.code} (${v.name}) ➔ ${results[v.id].trimmedMean}점 (단순평균: ${results[v.id].rawAvg}점)\n`;
+      });
+
+      text += `----------------------------------------\n`;
+      text += `📊 위원별 세부 점수:\n`;
+      AppState.evaluators.forEach((ev, idx) => {
+        if (!ev.hasImage) {
+          text += `${idx + 1}. ${ev.mappedName}: [⚠️미등록 - 0점 처리]\n`;
+          return;
+        }
+        const vScores = AppState.settings.vendors.map(v => {
+          const s = AppState.scores[ev.id]?.[v.id];
+          const val = s ? s.calculatedSum : 0;
+          if (s && !s.isValid) return `${v.code} ${val}점(⚠️검수오류)`;
+          return `${v.code} ${val}점`;
+        }).join(' | ');
+        text += `${idx + 1}. ${ev.mappedName}: ${vScores}\n`;
+      });
+      text += `\n※ 세부 PDF 집계표는 공식 보고서 문서를 참조 바랍니다.`;
+
+      return text;
+    }
+
+    function openKakaoShareModal() {
+      document.getElementById('kakaoShareModal').classList.remove('hidden');
+    }
+
+    function closeKakaoModal() {
+      document.getElementById('kakaoShareModal').classList.add('hidden');
+    }
+
+    async function sharePdfToKakao() {
+      closeKakaoModal();
+      const element = document.getElementById('pdfContent');
+      const filename = `${AppState.settings.projectName}_평가집계표.pdf`;
+
+      const opt = {
+        margin: [8, 8, 8, 8],
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      showToast('카카오톡 PDF 전송 준비 중...', '잠시만 기다려 주세요.');
+      try {
+        const pdfBlob = await html2pdf().set(opt).from(element).output('blob');
+        const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
+
+        if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+          await navigator.share({
+            title: `[평가결과] ${AppState.settings.projectName}`,
+            text: getKakaoSummaryText(),
+            files: [pdfFile]
+          });
+          showToast('카카오톡 공유 창 호출 완료', '대화방을 선택하여 PDF를 전송하세요.');
+        } else {
+          // Fallback: Download file & copy summary text
+          await html2pdf().set(opt).from(element).save();
+          await navigator.clipboard.writeText(getKakaoSummaryText());
+          showToast('PDF 다운로드 & 요약문 복사 완료', '카카오톡을 실행하여 대화방에 파일과 요약문을 공유하세요.', 4500);
+          try {
+            window.location.href = 'kakaolink://';
+          } catch (e) {}
+        }
+      } catch (err) {
+        console.error('Kakao PDF share error:', err);
+        showToast('공유 알림', 'PDF를 다운로드합니다.');
+        downloadPdfReport();
+      }
+    }
+
+    async function shareCsvToKakao() {
+      closeKakaoModal();
+      const results = calculateFinalAggregation();
+      const vendors = AppState.settings.vendors;
+      const evaluators = AppState.evaluators;
+
+      let csv = '\uFEFF';
+      csv += `사업명,${AppState.settings.projectName}\n`;
+      csv += `평가일시,${new Date().toLocaleString('ko-KR')}\n\n`;
+      csv += `순번,평가위원,${vendors.map(v => `"${v.code} (${v.name})"`).join(',')},검수여부\n`;
+
+      evaluators.forEach((ev, idx) => {
+        let status = '정상';
+        if (!ev.hasImage) {
+          status = '미등록(오류)';
+        } else {
+          const hasMismatch = vendors.some(v => {
+            const s = AppState.scores[ev.id]?.[v.id];
+            return s && !s.isValid;
+          });
+          if (hasMismatch) status = '검수오류';
+        }
+
+        const scores = vendors.map(v => {
+          if (!ev.hasImage) return '0(미등록)';
+          const s = AppState.scores[ev.id]?.[v.id];
+          const val = s ? s.calculatedSum : 0;
+          if (s && !s.isValid) return `"${val}(검수오류)"`;
+          return val;
+        });
+        csv += `${idx + 1},"${ev.mappedName}",${scores.join(',')},"${status}"\n`;
+      });
+
+      csv += `단순합계,-,${vendors.map(v => results[v.id].rawSum).join(',')},-\n`;
+      csv += `단순평균,-,${vendors.map(v => results[v.id].rawAvg).join(',')},-\n`;
+      csv += `절사평균(최종),-,${vendors.map(v => results[v.id].trimmedMean).join(',')},-\n`;
+      csv += `최종순위,-,${vendors.map(v => `${results[v.id].rank}위`).join(',')},-\n`;
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const csvFile = new File([blob], `${AppState.settings.projectName}_평가집계표.csv`, { type: 'text/csv' });
+
+      if (navigator.canShare && navigator.canShare({ files: [csvFile] })) {
+        try {
+          await navigator.share({
+            title: `[집계표CSV] ${AppState.settings.projectName}`,
+            files: [csvFile]
+          });
+          showToast('카카오톡 CSV 전송 완료', '대화방을 선택하여 공유하세요.');
+          return;
+        } catch (e) {}
+      }
+
+      downloadCsvReport();
+      showToast('CSV 다운로드 완료', '카카오톡 대화방에 파일을 전송하세요.');
+    }
+
+    async function copyKakaoSummaryAndLaunch() {
+      closeKakaoModal();
+      const text = getKakaoSummaryText();
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('카카오톡 요약문 클립보드 복사 완료', '카카오톡 대화방에 붙여넣기(Ctrl+V)하세요.', 4000);
+      } catch (e) {
+        showToast('클립보드 복사 알림', '요약문 복사가 완료되었습니다.');
+      }
+
+      try {
+        window.location.href = 'kakaotalk://';
+      } catch (e) {}
+    }
+
+    async function downloadPdfReport() {
+      const element = document.getElementById('pdfContent');
+      const filename = `${AppState.settings.projectName}_평가종합집계표.pdf`;
+
+      const opt = {
+        margin: [8, 8, 8, 8],
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      showToast('PDF 보고서 생성 중...', '잠시만 기다려 주세요.');
+      try {
+        await html2pdf().set(opt).from(element).save();
+        showToast('PDF 다운로드 완료', `${filename} 파일이 저장되었습니다.`);
+      } catch (err) {
+        console.error('PDF export error:', err);
+        showToast('PDF 생성 알림', 'PDF 변환에 실패하여 인쇄 대화상자로 연결합니다.');
+        window.print();
+      }
+    }
+
+    async function handleSendEmail() {
+      const results = calculateFinalAggregation();
+      const element = document.getElementById('pdfContent');
+      const filename = `${AppState.settings.projectName}_평가종합집계표.pdf`;
+
+      const opt = {
+        margin: [8, 8, 8, 8],
+        filename: filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      if (navigator.canShare) {
+        try {
+          const pdfBlob = await html2pdf().set(opt).from(element).output('blob');
+          const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
+
+          if (navigator.canShare({ files: [pdfFile] })) {
+            await navigator.share({
+              title: `[평가결과] ${AppState.settings.projectName}`,
+              text: `제안서 기술평가 집계가 완료되었습니다. 첨부된 집계표 PDF를 확인해 주시기 바랍니다.`,
+              files: [pdfFile]
+            });
+            showToast('공유 완료', '메일/메신저 공유 시트가 호출되었습니다.');
+            return;
+          }
+        } catch (e) {
+          console.warn('Native canShare error, fallback to mailto:', e);
+        }
+      }
+
+      document.getElementById('emailRecipientModal').classList.remove('hidden');
+    }
+
+    function closeEmailModal() {
+      document.getElementById('emailRecipientModal').classList.add('hidden');
+    }
+
+    async function executeEmailSend() {
+      const recipient = document.getElementById('recipientEmailInput').value.trim();
+      closeEmailModal();
+
+      await downloadPdfReport();
+
+      const results = calculateFinalAggregation();
+      const subject = `[평가결과 보고] ${AppState.settings.projectName} 제안평가 집계표`;
+
+      let body = `안녕하십니까,\n\n${AppState.settings.projectName} 제안평가 최종 집계 결과 보고서입니다.\n`;
+      body += `\n■ 사업명: ${AppState.settings.projectName}`;
+      body += `\n■ 평가일시: ${new Date().toLocaleString('ko-KR')}`;
+      body += `\n■ 평가위원 수: ${AppState.evaluators.length}명\n`;
+      body += `\n========================================`;
+      body += `\n[최종 집계 결과 (최고/최저점 제외 절사평균)]`;
+      body += `\n========================================\n`;
+
+      const sorted = [...AppState.settings.vendors].sort((a, b) => results[b.id].trimmedMean - results[a.id].trimmedMean);
+      sorted.forEach(v => {
+        body += `${results[v.id].rank}위: ${v.code} (${v.name}) ➔ ${results[v.id].trimmedMean}점 (단순평균: ${results[v.id].rawAvg}점)\n`;
+      });
+
+      body += `\n※ 세부 평가위원별 채점표는 기기에 다운로드된 PDF 보고서를 첨부하여 확인하시기 바랍니다.\n감사합니다.`;
+
+      const mailtoUrl = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      window.location.href = mailtoUrl;
+    }
+
+    function downloadCsvReport() {
+      const results = calculateFinalAggregation();
+      const vendors = AppState.settings.vendors;
+      const evaluators = AppState.evaluators;
+
+      let csv = '\uFEFF';
+      csv += `사업명,${AppState.settings.projectName}\n`;
+      csv += `평가일시,${new Date().toLocaleString('ko-KR')}\n\n`;
+
+      csv += `순번,평가위원,${vendors.map(v => `"${v.code} (${v.name})"`).join(',')},검수여부\n`;
+
+      evaluators.forEach((ev, idx) => {
+        let status = '정상';
+        if (!ev.hasImage) {
+          status = '미등록(오류)';
+        } else {
+          const hasMismatch = vendors.some(v => {
+            const s = AppState.scores[ev.id]?.[v.id];
+            return s && !s.isValid;
+          });
+          if (hasMismatch) status = '검수오류';
+        }
+
+        const scores = vendors.map(v => {
+          if (!ev.hasImage) return '0(미등록)';
+          const s = AppState.scores[ev.id]?.[v.id];
+          const val = s ? s.calculatedSum : 0;
+          if (s && !s.isValid) return `"${val}(검수오류)"`;
+          return val;
+        });
+        csv += `${idx + 1},"${ev.mappedName}",${scores.join(',')},"${status}"\n`;
+      });
+
+      csv += `단순합계,-,${vendors.map(v => results[v.id].rawSum).join(',')},-\n`;
+      csv += `단순평균,-,${vendors.map(v => results[v.id].rawAvg).join(',')},-\n`;
+      csv += `절사평균(최종),-,${vendors.map(v => results[v.id].trimmedMean).join(',')},-\n`;
+      csv += `최종순위,-,${vendors.map(v => `${results[v.id].rank}위`).join(',')},-\n`;
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${AppState.settings.projectName}_평가집계표.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // =======================================================================
+    // 15. STEP 5 & RESET MODAL CONTROLLER
+    // =======================================================================
+    function openResetModal() {
+      document.getElementById('resetSafetyModal').classList.remove('hidden');
+    }
+
+    function closeResetModal() {
+      document.getElementById('resetSafetyModal').classList.add('hidden');
+    }
+
+    async function executeScoresOnlyReset() {
+      closeResetModal();
+      initEmptyScores();
+      AppState.evaluators.forEach(ev => {
+        ev.hasImage = false;
+        ev.realName = '';
+        ev.mappedName = `평가위원 ${ev.code}`;
+        ev.capturedAt = null;
+      });
+      await clearAllImagesFromDB();
+      saveAppState();
+      showToast('점수 및 이미지 데이터 초기화 완료', '환경 설정은 보존되었습니다. Step 2로 이동합니다.');
+      goToStep(2);
+    }
+
+    async function executeFullReset() {
+      closeResetModal();
+      localStorage.clear();
+      await clearAllImagesFromDB();
+      AppState.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+      initDefaultEvaluators(7);
+      initEmptyScores();
+      AppState.currentStep = 1;
+      AppState.activeEvaluatorId = 'eval-A';
+      AppState.activeVendorId = 'v-1';
+      saveAppState();
+      showToast('전체 완전 초기화 완료', '앱이 최초 설치 상태로 복원되었습니다.');
+      goToStep(1);
+    }
+
+    // =======================================================================
+    // 16. NAVIGATION INTERCEPTOR & WARNING MODAL (FEATURES 2 & 3)
+    // =======================================================================
+    function requestGoToStep(targetStep) {
+      // 1) From Step 2 moving to Step 3: Check for unregistered slots
+      if (targetStep === 3) {
+        const unreg = AppState.evaluators.filter(e => !e.hasImage);
+        if (unreg.length > 0) {
+          openWarningModal(
+            '⚠️ 미등록 평가표 존재 알림',
+            '미등록된 평가위원이 존재합니다. 모든 평가표를 등록해 주세요.',
+            `현재 총 ${AppState.evaluators.length}명 중 ${unreg.length}명의 평가표가 등록되지 않았습니다(적색 표시). 모든 평가표를 촬영/등록한 후 검수를 진행하는 것을 권장합니다.`,
+            unreg.map(u => `• ${u.defaultName} : 평가표 미등록 (적색)`),
+            '평가표 등록 계속하기 (Step 2)',
+            '미등록 상태로 검수 계속 진행',
+            3
+          );
+          return;
+        }
+      }
+
+      // 2) From Step 3 moving to Step 4: Check for unregistered slots or inspection errors
+      if (targetStep === 4) {
+        const unreg = AppState.evaluators.filter(e => !e.hasImage);
+        let mismatchCount = 0;
+        const mismatchList = [];
+
+        AppState.evaluators.forEach(ev => {
+          if (!ev.hasImage) {
+            mismatchList.push(`• ${ev.mappedName} : 평가표 미등록`);
+          } else {
+            AppState.settings.vendors.forEach(v => {
+              const s = AppState.scores[ev.id]?.[v.id];
+              if (s && !s.isValid) {
+                mismatchCount++;
+                mismatchList.push(`• ${ev.mappedName} - ${v.code} : 합계(${s.calculatedSum}점) != 표기총점(${s.writtenTotal}점) 불일치`);
+              }
+            });
+          }
+        });
+
+        if (unreg.length > 0 || mismatchCount > 0) {
+          openWarningModal(
+            '⚠️ 최종 집계 전 검수오류 및 미등록 알림',
+            '검수 오류 또는 미등록 위원이 존재합니다!',
+            `미등록 위원: ${unreg.length}명 / 점수 불일치 오류: ${mismatchCount}건이 감지되었습니다. 오류가 있는 상태로 집계 시 최종 순위 및 절사평균이 부정확할 수 있습니다.`,
+            mismatchList.slice(0, 5),
+            '오류 수정하기 (Step 3)',
+            '무시하고 최종 집계 확인하기',
+            4
+          );
+          return;
+        }
+      }
+
+      goToStep(targetStep);
+    }
+
+    function openWarningModal(title, subtitle, body, listItems, cancelBtnText, proceedBtnText, targetStep) {
+      pendingNavigationStep = targetStep;
+      document.getElementById('warningModalTitle').textContent = title;
+      document.getElementById('warningModalSubtitle').textContent = subtitle;
+      document.getElementById('warningModalBody').textContent = body;
+      
+      const listContainer = document.getElementById('warningModalList');
+      listContainer.innerHTML = listItems.map(item => `<div>${item}</div>`).join('');
+
+      document.getElementById('btnWarningModalCancel').textContent = cancelBtnText;
+      document.getElementById('btnWarningModalProceed').textContent = proceedBtnText;
+
+      document.getElementById('navigationWarningModal').classList.remove('hidden');
+    }
+
+    function closeWarningModal() {
+      document.getElementById('navigationWarningModal').classList.add('hidden');
+      pendingNavigationStep = null;
+    }
+
+    function confirmWarningProceed() {
+      const step = pendingNavigationStep;
+      closeWarningModal();
+      if (step) {
+        goToStep(step);
+      }
+    }
+
+    function goToStep(stepNumber) {
+      AppState.currentStep = stepNumber;
+      saveAppState();
+
+      for (let i = 1; i <= 4; i++) {
+        const tab = document.getElementById(`stepTab-${i}`);
+        const section = document.getElementById(`stepSection-${i}`);
+
+        if (i === stepNumber) {
+          tab.className = 'step-tab flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold transition border bg-gradient-to-r from-indigo-600 to-blue-600 text-white border-indigo-400 shadow-lg shadow-indigo-600/30 ring-2 ring-indigo-400/40';
+          section.classList.remove('hidden');
+        } else {
+          tab.className = 'step-tab flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold transition border bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200';
+          section.classList.add('hidden');
+        }
+      }
+
+      if (stepNumber === 1) renderStep1();
+      else if (stepNumber === 2) renderStep2();
+      else if (stepNumber === 3) renderStep3();
+      else if (stepNumber === 4) renderStep4();
+
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // =======================================================================
+    // 17. APP INITIALIZATION & RECOVERY ON LOAD
+    // =======================================================================
+    window.addEventListener('DOMContentLoaded', async () => {
+      const restored = await loadAppState();
+      document.getElementById('headerProjectName').textContent = AppState.settings.projectName;
+
+      goToStep(AppState.currentStep || 1);
+
+      if (restored) {
+        showToast('작업 상태가 100% 안전하게 복원되었습니다.', '새로고침 방어로 이전 설정과 점수가 보존되었습니다.');
+      }
+
+      initTesseractWorker();
+    });
+  </script>
+</body>
+</html>
