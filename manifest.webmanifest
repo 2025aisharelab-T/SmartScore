@@ -1,0 +1,15 @@
+{
+  "name": "스마트 평가점수 계산기 (SmartScore)",
+  "short_name": "SmartScore",
+  "description": "제안평가 수기 점수표 검수·집계",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#020617",
+  "theme_color": "#0f172a",
+  "lang": "ko",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
