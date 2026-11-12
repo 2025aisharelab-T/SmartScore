@@ -75,7 +75,7 @@
   <!-- ========================================================================= -->
   <!-- 0. REFRESH RESTORE TOAST NOTIFICATION                                     -->
   <!-- ========================================================================= -->
-  <div id="restoreToast" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 max-w-md w-[92%] transition-all duration-300 opacity-0 pointer-events-none transform -translate-y-4">
+  <div id="restoreToast" class="fixed top-4 left-1/2 -translate-x-1/2 z-[100] max-w-md w-[92%] transition-all duration-300 opacity-0 pointer-events-none transform -translate-y-4">
     <div class="bg-emerald-950/95 border border-emerald-500/60 text-emerald-200 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md flex items-center gap-3">
       <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
@@ -776,7 +776,7 @@
             </a>
           </div>
           <div class="relative">
-            <input type="password" id="geminiApiKeyInput" class="w-full bg-slate-950 border border-slate-700 focus:border-purple-500 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white outline-none pr-20" placeholder="AIzaSy..." />
+            <input type="password" id="geminiApiKeyInput" onchange="refreshGeminiModelList()" class="w-full bg-slate-950 border border-slate-700 focus:border-purple-500 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white outline-none pr-20" placeholder="AIzaSy..." />
             <button type="button" onclick="toggleApiKeyVisibility()" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 text-xs px-2 py-1">
               보기
             </button>
@@ -788,8 +788,8 @@
             <div class="font-bold flex items-center gap-1.5 text-purple-300">
               <span>💡 Gemini API 연결 안내</span>
             </div>
-            <div>모델 이름은 Google이 몇 달마다 바꾸고 이전 모델은 종료합니다. <b>자동 선택</b>을 두면 이 키로 쓸 수 있는 최신 모델을 찾아 씁니다. <b>연결 테스트</b>를 누르면 키가 맞는지, 어떤 모델을 쓸 수 있는지 바로 확인합니다.</div>
-            <div>무료 키는 분당·하루 요청 수가 적어 여러 장을 연달아 판독하면 한도에 걸릴 수 있습니다. 이때는 잠시 기다렸다가 다시 하거나 AI Studio에서 결제를 연결하세요.</div>
+            <div>모델 이름은 Google이 몇 달마다 바꾸고 이전 모델은 종료합니다. <b>자동 선택</b>을 두면 무료 한도가 가장 넉넉한 <b>Flash-Lite</b> 최신 모델을 먼저 씁니다. <b>연결 테스트</b>를 누르면 키가 맞는지, 어떤 모델을 쓸 수 있는지 바로 확인합니다.</div>
+            <div>모델을 직접 고르면 그 모델만 사용하며, 한도에 걸리면 다른 모델로 바꾸지 않고 알려 드립니다. 무료 키는 분당·하루 요청 수가 적어 여러 장을 연달아 판독하면 한도에 걸릴 수 있습니다. 이때는 잠시 기다렸다가 다시 하거나 다른 모델을 고르거나 AI Studio에서 결제를 연결하세요.</div>
           </div>
         </div>
 
@@ -798,7 +798,7 @@
           <div class="space-y-1.5">
             <label class="text-xs font-medium text-slate-300">AI 모델 선택</label>
             <select id="geminiModelSelect" class="w-full bg-slate-950 border border-slate-700 focus:border-purple-500 rounded-xl px-3 py-2 text-xs text-white outline-none">
-              <option value="auto">자동 선택 (권장) — 이 키로 쓸 수 있는 최신 모델을 찾아 사용</option>
+              <option value="auto">자동 선택 (권장) — 한도가 넉넉한 Flash-Lite 최신 모델을 먼저 사용</option>
             </select>
           </div>
           <div class="space-y-1.5">
@@ -815,6 +815,8 @@
           키가 있으면 사진 전체를 AI가 읽고 합계로 교차검증합니다. API Key는 이 기기의 브라우저에만 저장되며, <b>사진은 키를 설정한 경우에만 Google 서버로 전송</b>됩니다.
         </div>
       </div>
+
+      <div id="geminiTestResult" class="hidden" role="status" aria-live="polite"></div>
 
       <div class="flex items-center justify-between pt-2 border-t border-slate-800">
         <button onclick="testGeminiApiConnection()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 border border-purple-500/40 text-xs font-bold transition">
@@ -888,6 +890,11 @@
         <button onclick="closeKakaoModal()" class="text-slate-400 hover:text-white p-1">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
+      </div>
+
+      <div id="kakaoPcHint" class="hidden p-3 rounded-xl bg-slate-950 border border-yellow-500/40 text-[11px] text-yellow-100 leading-relaxed">
+        💻 <b>PC에서는 카카오톡 앱으로 파일을 바로 보낼 수 없습니다.</b> (PC의 공유 창에는 카카오톡이 나오지 않습니다.)
+        아래 1·2번은 파일을 저장하고 카카오톡을 열어 드립니다. 카카오톡 PC 대화방에 저장된 파일을 끌어다 놓으세요. 스마트폰에서는 대화방을 바로 고를 수 있습니다.
       </div>
 
       <div class="space-y-3">
@@ -1147,9 +1154,18 @@
       aiEngine: {
         apiKey: localStorage.getItem('smartscore_gemini_api_key') || '',
         model: (function() {
-          // Google retires model names every few months: the old default and retired generations become 'auto'.
-          const m = localStorage.getItem('smartscore_gemini_model');
-          return (!m || m === 'gemini-flash-latest' || /^gemini-[12]\./.test(m)) ? 'auto' : m;
+          // Earlier versions saved their own default ('gemini-flash-latest', 1.x names) as if it were the user's choice:
+          // reset those to 'auto' once. After that a saved choice is kept exactly as chosen; a model Google has really
+          // retired is caught when it is used (see geminiGenerate / rememberGeminiModel).
+          try {
+            let m = localStorage.getItem('smartscore_gemini_model');
+            if (localStorage.getItem('smartscore_gemini_model_v') !== '2') {
+              if (!m || m === 'gemini-flash-latest' || /^gemini-1\./.test(m)) m = 'auto';
+              localStorage.setItem('smartscore_gemini_model', m);
+              localStorage.setItem('smartscore_gemini_model_v', '2');
+            }
+            return m || 'auto';
+          } catch (e) { return 'auto'; }
         })(),
         lastGoodModel: localStorage.getItem('smartscore_gemini_last_good') || '',
         autoOcr: localStorage.getItem('smartscore_gemini_auto_ocr') !== 'false'
@@ -2369,7 +2385,7 @@
         const noFreeQuota = /limit:\s*0\b/.test(raw);
         return new GeminiError('quota', noFreeQuota
           ? `${where}이 키(무료 등급)에는 이 모델 사용량이 배정되어 있지 않습니다.`
-          : `${where}요청 한도(분당·일일 요청 수)를 초과했습니다.`, raw, { retrySec: noFreeQuota ? null : retrySec });
+          : `${where}요청 한도(분당·일일 요청 수)를 초과했습니다.`, raw, { retrySec: noFreeQuota ? null : retrySec, noFreeQuota });
       }
       if (/SERVICE_DISABLED|has not been used in project|is disabled/i.test(all))
         return new GeminiError('permission', '이 API Key의 Google Cloud 프로젝트에서 Generative Language API가 꺼져 있습니다. Google AI Studio에서 새 키를 발급받거나 콘솔에서 API를 사용 설정해 주세요.', raw);
@@ -2405,10 +2421,10 @@
         !/(embed|tts|image|imagen|live|audio|robotics|computer-use|aqa|veo|lyria|research)/i.test(id);
     }
 
-    // Order tried in 'auto': current aliases and stable flash first (free keys can use them),
-    // then pro, then lite, previews/experimental last; newer versions first inside each group.
+    // Order of the model list (dropdown and 'auto'): Flash-Lite first — it has by far the largest free quota
+    // (500 requests/day vs 20 for Flash) — then flash, pro; previews/experimental last; newer versions first.
     function sortGeminiModels(ids) {
-      const group = id => (/flash-lite/.test(id) ? 20 : /flash/.test(id) ? 0 : /pro/.test(id) ? 10 : 30) +
+      const group = id => (/flash-lite/.test(id) ? 0 : /flash/.test(id) ? 10 : /pro/.test(id) ? 20 : 30) +
         (/preview|exp/.test(id) ? 40 : 0) - (/-latest$/.test(id) ? 0.5 : 0);
       const ver = id => { const m = id.match(/gemini-(\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : 0; };
       return [...ids].sort((a, b) => group(a) - group(b) || ver(b) - ver(a) || a.localeCompare(b));
@@ -2464,45 +2480,81 @@
 
     function sleepMs(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-    // Calls generateContent. Tries the chosen model, the last model that worked, the flash alias, and — only if
-    // those are dead / out of quota / overloaded — the models Google lists for this key. Key, permission and
-    // network errors stop at once, with their own message (another model would fail the same way).
+    const GEMINI_LITE_ALIAS = 'gemini-flash-lite-latest';
+    const isLiteModel = id => /flash-lite/.test(String(id || ''));
+
+    // One model, with the in-place retries (overload: once; per-minute limit: wait and retry).
+    // Returns { json, model, failures } on success, null if this model failed in a way another model could fix
+    // (recorded in `failures`), and throws for key / permission / network errors (another model would fail the same way).
+    async function tryGeminiModel(key, payload, model, failures) {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const json = await geminiFetch(`${GEMINI_BASE}/models/${encodeURIComponent(model)}:generateContent`, key,
+            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, model);
+          return { json, model, failures };
+        } catch (e) {
+          if (!(e instanceof GeminiError)) throw e;
+          if (attempt === 0 && e.kind === 'busy') { await sleepMs(1500); continue; }
+          if (attempt === 0 && e.kind === 'quota' && e.retrySec && e.retrySec <= 30) {   // per-minute limit: wait, same model
+            showToast('AI 요청 한도 대기', `무료 키의 분당 요청 한도에 걸렸습니다. ${e.retrySec}초 후 자동으로 다시 시도합니다.`, Math.min(e.retrySec, 30) * 1000);
+            await sleepMs(e.retrySec * 1000);
+            continue;
+          }
+          failures.push({ model, kind: e.kind, message: e.message, detail: e.detail, noFreeQuota: !!e.noFreeQuota });
+          if (!GEMINI_FALLBACK_KINDS.has(e.kind)) { e.failures = failures; throw e; }
+          return null;
+        }
+      }
+      return null;
+    }
+
+    // Calls generateContent.
+    //  * A model the user picked is the only one used. If it hits a limit the error says so — answering with a
+    //    different model silently made the choice meaningless and used up the quota of other models. Only a model
+    //    Google has retired is replaced (by 'auto'; the caller then resets the saved setting).
+    //  * 'auto' tries Flash-Lite models first (500 free requests/day; Flash has 20). When one is rate-limited the next
+    //    Lite model is tried (separate quota). Flash/Pro are used only when no Lite model exists for this key — never
+    //    just because the Lite quota is used up.
     async function geminiGenerate(key, payload, preferredModel) {
       const pref = preferredModel || GEMINI_AUTO;
-      const queue = [];
-      const push = id => { if (id && id !== GEMINI_AUTO && !queue.includes(id)) queue.push(id); };
-      push(pref);
-      push(AppState.aiEngine && AppState.aiEngine.lastGoodModel);
-      push('gemini-flash-latest');
       const failures = [];
-      let listed = false;
-      for (let i = 0; i < queue.length && failures.length < 5; i++) {
-        const model = queue[i];
-        for (let attempt = 0; attempt < 2; attempt++) {
-          try {
-            const json = await geminiFetch(`${GEMINI_BASE}/models/${encodeURIComponent(model)}:generateContent`, key,
-              { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, model);
-            return { json, model, failures };
-          } catch (e) {
-            if (!(e instanceof GeminiError)) throw e;
-            if (attempt === 0 && e.kind === 'busy') { await sleepMs(1500); continue; }
-            if (attempt === 0 && e.kind === 'quota' && e.retrySec && e.retrySec <= 30) {   // per-minute limit: wait, same model
-              showToast('AI 요청 한도 대기', `무료 키의 분당 요청 한도에 걸렸습니다. ${e.retrySec}초 후 자동으로 다시 시도합니다.`, Math.min(e.retrySec, 30) * 1000);
-              await sleepMs(e.retrySec * 1000);
-              continue;
-            }
-            failures.push({ model, kind: e.kind, message: e.message, detail: e.detail });
-            if (!GEMINI_FALLBACK_KINDS.has(e.kind)) { e.failures = failures; throw e; }
-            break;
-          }
+      const tried = new Set();
+      const runTier = async (list, max) => {
+        let n = 0;
+        for (const model of list) {
+          if (!model || tried.has(model)) continue;
+          if (n++ >= max) break;
+          tried.add(model);
+          const r = await tryGeminiModel(key, payload, model, failures);
+          if (r) return r;
         }
-        if (!listed && i === queue.length - 1) {          // known names exhausted: ask Google what this key can use
-          listed = true;
-          let ids;
-          try { ids = await listGeminiModels(key); }
+        return null;
+      };
+      let listed = null;                                   // models Google lists for this key, best first
+      const getListed = async () => {
+        if (!listed) {
+          try { listed = await listGeminiModels(key); }
           catch (e) { if (e instanceof GeminiError) e.failures = failures; throw e; }   // key/network error is the real cause
-          ids.forEach(push);
         }
+        return listed;
+      };
+
+      if (pref !== GEMINI_AUTO) {
+        const r = await runTier([pref], 1);
+        if (r) return r;
+        if (failures[0].kind !== 'model') throw summarizeGeminiFailures(failures);
+        // chosen model no longer exists -> continue with automatic selection below
+      }
+
+      const lastGood = AppState.aiEngine && AppState.aiEngine.lastGoodModel;
+      let r = await runTier([isLiteModel(lastGood) ? lastGood : '', GEMINI_LITE_ALIAS], 2);
+      if (!r) r = await runTier((await getListed()).filter(isLiteModel), 4);
+      if (r) return r;
+
+      const liteLimited = failures.some(f => isLiteModel(f.model) && (f.kind === 'busy' || (f.kind === 'quota' && !f.noFreeQuota)));
+      if (!liteLimited) {
+        r = await runTier((await getListed()).filter(id => !isLiteModel(id)), 4);
+        if (r) return r;
       }
       throw summarizeGeminiFailures(failures);
     }
@@ -2517,7 +2569,10 @@
         try { localStorage.setItem('smartscore_gemini_model', GEMINI_AUTO); } catch (e) {}
       }
       updateAiEngineHeaderBadge();
-      if (failures.length) showToast('AI 모델 자동 전환', `${failures[0].message} → [${model}] 모델로 처리했습니다.`, 5000);
+      // Say so when the answer did not come from what was asked for: a chosen model that is gone, or Flash instead of Lite.
+      // (Finding the right Lite name in 'auto' is routine and needs no message.)
+      if (failures.length && (eng.model !== GEMINI_AUTO || !isLiteModel(model)))
+        showToast('AI 모델 자동 전환', `${failures[0].message} → [${model}] 모델로 처리했습니다.`, 5000);
     }
 
     function populateGeminiModelSelect(ids, selected) {
@@ -2525,9 +2580,27 @@
       if (!sel) return;
       const list = [...(ids || [])];
       if (selected && selected !== GEMINI_AUTO && !list.includes(selected)) list.unshift(selected);
-      sel.innerHTML = `<option value="${GEMINI_AUTO}">자동 선택 (권장) — 이 키로 쓸 수 있는 최신 모델을 찾아 사용</option>` +
+      sel.innerHTML = `<option value="${GEMINI_AUTO}">자동 선택 (권장) — 한도가 넉넉한 Flash-Lite 최신 모델을 먼저 사용</option>` +
         list.map(id => `<option value="${esc(id)}">${esc(id)}${ids && !ids.includes(id) ? ' (사용 불가)' : ''}</option>`).join('');
       sel.value = selected && [GEMINI_AUTO, ...list].includes(selected) ? selected : GEMINI_AUTO;
+    }
+
+    // Fills the model dropdown with the models this key can use. The list only lives in memory, so after every page
+    // reload the dropdown would otherwise hold just 'auto' until 연결 테스트 was pressed. A pick the user makes while
+    // the list is loading is kept: the selection is read when the list arrives, not when the request started.
+    let geminiListSeq = 0;
+    async function refreshGeminiModelList(force) {
+      const key = (document.getElementById('geminiApiKeyInput').value || '').trim();
+      const sel = document.getElementById('geminiModelSelect');
+      if (!key || !sel) return null;
+      const seq = ++geminiListSeq;
+      try {
+        const ids = await listGeminiModels(key, force);
+        if (seq === geminiListSeq) populateGeminiModelSelect(ids, sel.value);
+        return ids;
+      } catch (e) {
+        return null;   // wrong key / offline: 연결 테스트 explains the reason
+      }
     }
 
     function openGeminiModal() {
@@ -2535,7 +2608,10 @@
       const key = AppState.aiEngine?.apiKey || '';
       populateGeminiModelSelect(geminiModelListCache.key === key ? geminiModelListCache.ids : null, AppState.aiEngine?.model || GEMINI_AUTO);
       document.getElementById('geminiAutoOcrCheckbox').checked = AppState.aiEngine?.autoOcr !== false;
+      const testResult = document.getElementById('geminiTestResult');
+      if (testResult) { testResult.className = 'hidden'; testResult.textContent = ''; }   // no stale result from an earlier test
       document.getElementById('geminiSettingsModal').classList.remove('hidden');
+      refreshGeminiModelList();
     }
 
     function closeGeminiModal() {
@@ -2590,20 +2666,34 @@
       }
     }
 
+    // Result of the connection test, shown inside the settings dialog itself. A toast alone was not enough (it lives
+    // outside the dialog) and alert() is silently blocked in some embedded browsers, which looked like "nothing happens".
+    function setGeminiTestResult(kind, text) {   // kind: 'busy' | 'ok' | 'error'
+      const el = document.getElementById('geminiTestResult');
+      if (!el) return;
+      const tone = kind === 'ok' ? 'bg-emerald-950/60 border-emerald-600/60 text-emerald-200'
+        : kind === 'error' ? 'bg-rose-950/60 border-rose-600/60 text-rose-200'
+        : 'bg-slate-950 border-slate-700 text-slate-300';
+      el.className = `p-3 rounded-xl border text-[11px] leading-relaxed whitespace-pre-wrap break-words max-h-44 overflow-y-auto ${tone}`;
+      el.textContent = text;
+    }
+
     // Diagnostic connection test: 1) can the key list models?  2) does a real generateContent call answer?
     async function testGeminiApiConnection() {
       const key = document.getElementById('geminiApiKeyInput').value.trim();
       const chosen = document.getElementById('geminiModelSelect').value || GEMINI_AUTO;
       if (!key) {
-        alert('API Key를 먼저 입력해 주세요.\n(Google AI Studio: https://aistudio.google.com/app/apikey 에서 발급)');
+        setGeminiTestResult('error', 'API Key를 먼저 입력해 주세요.\n(Google AI Studio: https://aistudio.google.com/app/apikey 에서 발급)');
         return;
       }
+      setGeminiTestResult('busy', '⏳ 연결 확인 중… 이 키로 쓸 수 있는 모델을 조회하고 테스트 요청을 보냅니다.');
       showToast('Gemini API 연결 확인 중...', '이 키로 쓸 수 있는 모델을 조회하고 테스트 요청을 보냅니다.');
       const startTime = Date.now();
       let ids = null;
       try {
         ids = await listGeminiModels(key, true);
-        populateGeminiModelSelect(ids, chosen);
+        geminiListSeq++;   // supersedes a list request that may still be in flight
+        populateGeminiModelSelect(ids, document.getElementById('geminiModelSelect').value || chosen);
         const result = await geminiGenerate(key, {
           contents: [{ parts: [{ text: 'Reply with this JSON only: {"status":"ok"}' }] }],
           generationConfig: { responseMimeType: 'application/json' }
@@ -2615,13 +2705,15 @@
         if (chosen !== GEMINI_AUTO && result.model !== chosen) document.getElementById('geminiModelSelect').value = GEMINI_AUTO;
         updateAiEngineHeaderBadge();
         const switched = result.failures.length ? ` (선택 모델 실패 → 자동 전환: ${result.failures[0].message})` : '';
-        showToast('✅ Gemini API 연결 성공!', `모델 [${result.model}] · 응답 ${Date.now() - startTime}ms · 사용 가능 모델 ${ids.length}개${switched}`, 6000);
+        const okText = `모델 [${result.model}] · 응답 ${Date.now() - startTime}ms · 사용 가능 모델 ${ids.length}개${switched}`;
+        setGeminiTestResult('ok', `✅ Gemini API 연결 성공!\n${okText}`);
+        showToast('✅ Gemini API 연결 성공!', okText, 6000);
       } catch (err) {
         console.error('Gemini test error:', err);
         const tried = err.failures && err.failures.length ? `\n\n시도한 모델: ${err.failures.map(f => `${f.model}(${f.kind})`).join(', ')}` : '';
         const detail = err.detail ? `\n\nGoogle 원문: ${String(err.detail).slice(0, 400)}` : '';
         const listed = ids ? `\n이 키로 조회된 모델 ${ids.length}개` : '';
-        alert(`Gemini API 연결 실패\n\n${err.message}${listed}${tried}${detail}`);
+        setGeminiTestResult('error', `❌ Gemini API 연결 실패\n\n${err.message}${listed}${tried}${detail}`);
       }
     }
 
@@ -4779,7 +4871,34 @@ rubric이 없으면 null로 두세요.`;
       return text;
     }
 
+    // Web Share (navigator.share) opens the operating system's own share sheet. On a phone or tablet that sheet lists
+    // KakaoTalk. On Windows it lists only Microsoft Store apps (Mail, Skype, OneNote, Copilot — Mail asks for a Microsoft
+    // account) and KakaoTalk for PC is not on it, so files are shared that way on phones/tablets only. On a PC the file
+    // is saved and KakaoTalk is opened for the user to drop it into the chat.
+    function isMobileDevice() {
+      const nav = navigator;
+      if (nav.userAgentData && typeof nav.userAgentData.mobile === 'boolean') return nav.userAgentData.mobile;
+      return /Android|iPhone|iPad|iPod/i.test(nav.userAgent || '') || (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1);   // iPadOS reports itself as a Mac
+    }
+
+    function canShareFileToKakao(file) {
+      return isMobileDevice() && !!navigator.canShare && navigator.canShare({ files: [file] });
+    }
+
+    function openKakaoTalkApp() {
+      try { window.location.href = 'kakaotalk://'; } catch (e) { /* no KakaoTalk handler: the toast tells the user what to do */ }
+    }
+
+    function saveBlobAs(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
     function openKakaoShareModal() {
+      document.getElementById('kakaoPcHint').classList.toggle('hidden', isMobileDevice());
       document.getElementById('kakaoShareModal').classList.remove('hidden');
     }
 
@@ -4847,21 +4966,28 @@ rubric이 없으면 null로 두세요.`;
         const pdfBlob = await html2pdf().set(opt).from(element).output('blob');
         const pdfFile = new File([pdfBlob], filename, { type: 'application/pdf' });
 
-        if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-          await navigator.share({
-            title: `[평가결과] ${AppState.settings.projectName}`,
-            text: getKakaoSummaryText(),
-            files: [pdfFile]
-          });
-          showToast('카카오톡 공유 창 호출 완료', '대화방을 선택하여 PDF를 전송하세요.');
-        } else {
-          // Fallback: download the file; copy the summary only if the clipboard really accepts it
-          await html2pdf().set(opt).from(element).save();
-          const copied = await copyTextSafely(getKakaoSummaryText());
-          showToast(copied ? 'PDF 다운로드 & 요약문 복사 완료' : 'PDF 다운로드 완료',
-            copied ? '카카오톡을 실행하여 대화방에 파일과 요약문을 공유하세요.' : '이 기기는 파일 바로 공유를 지원하지 않습니다. 다운로드된 PDF를 카카오톡 대화방에 첨부하세요.', 5000);
-          if (copied) { try { window.location.href = 'kakaotalk://'; } catch (e) {} }
+        if (canShareFileToKakao(pdfFile)) {
+          try {
+            await navigator.share({
+              title: `[평가결과] ${AppState.settings.projectName}`,
+              text: getKakaoSummaryText(),
+              files: [pdfFile]
+            });
+            showToast('카카오톡 공유 창 호출 완료', '대화방을 선택하여 PDF를 전송하세요.');
+            return;
+          } catch (e) {
+            if (e && e.name === 'AbortError') return;   // the user closed the share sheet: nothing more to do
+            console.warn('Web Share failed, saving the file instead:', e);
+          }
         }
+
+        // PC (or a phone whose share sheet failed): save the file, copy the summary only if the clipboard really
+        // accepts it, and open KakaoTalk so the file can be dropped into the chat.
+        saveBlobAs(pdfBlob, filename);
+        const copied = await copyTextSafely(getKakaoSummaryText());
+        showToast(copied ? 'PDF 저장 & 요약문 복사 완료' : 'PDF 저장 완료',
+          `카카오톡 대화방에 저장된 PDF를 끌어다 놓으세요.${copied ? ' 요약문은 Ctrl+V(붙여넣기)로 보낼 수 있습니다.' : ''}`, 6000);
+        openKakaoTalkApp();
       } catch (err) {
         console.error('Kakao PDF share error:', err);
         showToast('공유 알림', 'PDF를 다운로드합니다.');
@@ -4874,16 +5000,20 @@ rubric이 없으면 null로 두세요.`;
       const blob = new Blob([buildCsvReport()], { type: 'text/csv;charset=utf-8;' });
       const csvFile = new File([blob], `${safeFileBase()}_평가집계표.csv`, { type: 'text/csv' });
 
-      if (navigator.canShare && navigator.canShare({ files: [csvFile] })) {
+      if (canShareFileToKakao(csvFile)) {
         try {
           await navigator.share({ title: `[집계표CSV] ${AppState.settings.projectName}`, files: [csvFile] });
-          showToast('카카오톡 CSV 전송 완료', '대화방을 선택하여 공유하세요.');
+          showToast('카카오톡 공유 창 호출 완료', '대화방을 선택하여 공유하세요.');
           return;
-        } catch (e) { /* user cancelled or share failed: fall through to download */ }
+        } catch (e) {
+          if (e && e.name === 'AbortError') return;   // the user closed the share sheet: nothing more to do
+          console.warn('Web Share failed, saving the file instead:', e);
+        }
       }
 
       downloadCsvReport();
-      showToast('CSV 다운로드 완료', '카카오톡 대화방에 파일을 전송하세요.');
+      showToast('CSV 저장 완료', '카카오톡 대화방에 저장된 CSV 파일을 끌어다 놓으세요.', 6000);
+      openKakaoTalkApp();
     }
 
     async function copyKakaoSummaryAndLaunch() {
@@ -4891,7 +5021,7 @@ rubric이 없으면 null로 두세요.`;
       const text = getKakaoSummaryText();
       if (await copyTextSafely(text)) {
         showToast('카카오톡 요약문 클립보드 복사 완료', '카카오톡 대화방에 붙여넣기 하세요.', 4000);
-        try { window.location.href = 'kakaotalk://'; } catch (e) {}
+        openKakaoTalkApp();
       } else {
         showTextForManualCopy('자동 복사가 막혀 있습니다 — 아래 글을 길게 눌러 전체 선택 후 복사하세요', text);
       }
