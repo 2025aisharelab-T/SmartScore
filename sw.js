@@ -3,7 +3,7 @@
  * - CDN libraries (Tailwind, Tesseract core/worker/language data, html2pdf): cache first
  * Only active when the page is served over http(s); it is not used when index.html is opened as a local file.
  */
-const CACHE = 'smartscore-v3';
+const CACHE = 'smartscore-v6';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 const CDN_HOSTS = ['cdn.tailwindcss.com', 'cdn.jsdelivr.net', 'cdnjs.cloudflare.com', 'tessdata.projectnaptha.com', 'unpkg.com'];
 
